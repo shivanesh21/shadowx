@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shadowx-agent"
+version = "0.1.0"
+description = "ShadowX — a fast terminal AI coding agent powered by Gemini."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["ai", "agent", "gemini", "coding", "cli", "shadowx"]
+dependencies = [
+    "google-genai>=1.0.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+shadowx = "shadow.cli:main"
+shadow = "shadow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shadow*"]

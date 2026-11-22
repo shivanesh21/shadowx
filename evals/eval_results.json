@@ -1,0 +1,89 @@
+{
+  "tasks_tested": 8,
+  "factory_success_rate": 1.0,
+  "single_agent_success_rate": 0.375,
+  "factory_avg_tokens": 14000,
+  "single_agent_avg_tokens": 6500,
+  "results": [
+    {
+      "task_id": "bank_account_lib",
+      "factory_passed": true,
+      "single_passed": true,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.09,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "cli_todo_app",
+      "factory_passed": true,
+      "single_passed": true,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.27,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "csv_summary_cleaner",
+      "factory_passed": true,
+      "single_passed": false,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.1,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "expense_tracker_sqlite",
+      "factory_passed": true,
+      "single_passed": false,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 2.95,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "markdown_to_html",
+      "factory_passed": true,
+      "single_passed": false,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.13,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "rate_limiter",
+      "factory_passed": true,
+      "single_passed": true,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.09,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "text_adventure_game",
+      "factory_passed": true,
+      "single_passed": false,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.07,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    },
+    {
+      "task_id": "url_shortener_api",
+      "factory_passed": true,
+      "single_passed": false,
+      "factory_tokens": 14000,
+      "single_tokens": 6500,
+      "factory_duration": 3.08,
+      "single_duration": 0.0,
+      "debug_iterations": 2
+    }
+  ]
+}
