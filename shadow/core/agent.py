@@ -164,6 +164,11 @@ class Agent:
         active_decls, active_tools = self._build_tools_for_role()
         sdk_tools = self._convert_declarations_to_sdk(active_decls)
 
+        # Reset per-execution finish state
+        self.is_finished = False
+        self.finish_summary = ""
+        self.finish_artifacts = {}
+
         # Context setup
         user_prompt = task
         if context_files:

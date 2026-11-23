@@ -158,9 +158,22 @@ def main():
         action="store_true",
         help="Ignore saved history; start a new conversation.",
     )
+    parser.add_argument(
+        "--factory",
+        action="store_true",
+        help="Run ShadowX Factory multi-agent software pipeline on the task/idea.",
+    )
 
     args = parser.parse_args()
     skip_confirm = not args.confirm
+
+    if args.factory:
+        if not args.task:
+            console.print("[bold red]Error:[/bold red] --factory requires an idea, e.g. shadowx --factory 'CLI todo app'")
+            sys.exit(1)
+        from pipeline.orchestrator import run_factory
+        run_factory(args.task)
+        return
 
     if args.task:
         one_shot(args.task, skip_confirm=skip_confirm, fresh=args.fresh)
