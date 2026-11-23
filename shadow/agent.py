@@ -1,10 +1,12 @@
 """
 agent.py — Single-agent interface for ShadowX CLI.
 
-Refactored to route execution through the new shadow.core.Agent engine and LLMProvider,
-preserving 100% backward compatibility for `shadow.cli` and `shadowx.bat`.
+Routes execution through shadow.core.Agent and shadow.tools.ToolRegistry.
+Subscribes the terminal renderer directly to EventBus events, while streaming
+structured logs to runs/default/events.jsonl.
 """
 
+from __future__ import annotations
 import os
 import json
 from pathlib import Path
@@ -14,9 +16,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 
-from shadow.tools import TOOL_DECLARATIONS, TOOL_MAP
+from shadow.tools.registry import ToolRegistry
 from shadow.core.agent import Agent, AgentSpec, AgentResult
-from shadow.core.events import Event, AgentMessage, ToolCallEvent, ToolResultEvent
+from shadow.core.events import (
+    Event,
+    RunStarted,
+    AgentMessage,
+    ToolCallEvent,
+    ToolResultEvent,
+    FileChanged,
+    TestResultEvent,
+)
 from shadow.core.event_bus import EventBus
 from shadow.core.llm import GeminiProvider, LLMProvider
 
@@ -27,6 +37,7 @@ console = Console()
 # ---------------------------------------------------------------------------
 MAX_STEPS    = 15                            # Hard cap on agentic iterations
 HISTORY_FILE = Path("shadowx_history.json")  # Persisted conversation file
+DEFAULT_LOG_PATH = Path("runs") / "default" / "events.jsonl"
 
 SYSTEM_PROMPT = """\
 You are ShadowX, a fast and proactive terminal AI coding agent.
@@ -115,26 +126,18 @@ def build_provider() -> LLMProvider:
     return GeminiProvider(api_key=api_key, default_model=model_name)
 
 
-def run_task(task: str, history: list[dict], skip_confirm: bool = True) -> list[dict]:
+def attach_cli_renderer(event_bus: EventBus) -> None:
     """
-    Run one task through the refactored Agent engine.
-
-    Connects Rich terminal output as an EventBus listener and executes
-    through shadow.core.Agent.
+    Attach terminal UI rendering handlers to the EventBus.
+    Decouples execution entirely from output presentation.
     """
-    provider = build_provider()
+    def on_run_started(event: Event) -> None:
+        if isinstance(event, RunStarted):
+            console.print(Panel(
+                f"[bold cyan]🎯 Task:[/bold cyan] {event.idea}",
+                border_style="cyan",
+            ))
 
-    spec = AgentSpec(
-        name="ShadowX",
-        system_prompt=SYSTEM_PROMPT,
-        allowed_tools=list(TOOL_MAP.keys()),
-        max_steps=MAX_STEPS,
-        require_finish_tool=False,
-    )
-
-    event_bus = EventBus()
-
-    # Hook up Rich console rendering via EventBus
     def on_agent_message(event: Event) -> None:
         if isinstance(event, AgentMessage) and event.content:
             console.print(Panel(
@@ -153,34 +156,76 @@ def run_task(task: str, history: list[dict], skip_confirm: bool = True) -> list[
     def on_tool_result(event: Event) -> None:
         if isinstance(event, ToolResultEvent):
             res_preview = event.result[:1000] + ("…" if len(event.result) > 1000 else "")
+            border_color = "red" if event.is_error else "magenta"
+            title_prefix = "Error: " if event.is_error else "Result: "
             console.print(Panel(
                 res_preview,
-                title=f"[magenta]Result: {event.tool_name}[/magenta]",
-                border_style="magenta",
+                title=f"[{border_color}]{title_prefix}{event.tool_name}[/{border_color}]",
+                border_style=border_color,
             ))
 
+    def on_file_changed(event: Event) -> None:
+        if isinstance(event, FileChanged):
+            console.print(f"[dim cyan]📝 File modified:[/dim cyan] [bold]{event.path}[/bold]")
+
+    def on_test_result(event: Event) -> None:
+        if isinstance(event, TestResultEvent):
+            color = "green" if event.failed == 0 and event.errors == 0 else "red"
+            console.print(Panel(
+                f"Passed: {event.passed} | Failed: {event.failed} | Errors: {event.errors}",
+                title=f"[{color}]Pytest Results[/{color}]",
+                border_style=color,
+            ))
+
+    event_bus.subscribe(on_run_started, "run_started")
     event_bus.subscribe(on_agent_message, "agent_message")
     event_bus.subscribe(on_tool_call, "tool_call")
     event_bus.subscribe(on_tool_result, "tool_result")
+    event_bus.subscribe(on_file_changed, "file_changed")
+    event_bus.subscribe(on_test_result, "test_result")
 
-    console.print(Panel(
-        f"[bold cyan]🎯 Task:[/bold cyan] {task}",
-        border_style="cyan",
-    ))
 
-    # Wrap tools to respect skip_confirm
-    wrapped_tools: dict[str, Any] = {}
-    for name, fn in TOOL_MAP.items():
-        if name in ("write_file", "run_command"):
-            wrapped_tools[name] = lambda *args, _fn=fn, **kwargs: _fn(*args, skip_confirm=skip_confirm, **kwargs)
-        else:
-            wrapped_tools[name] = fn
+def run_task(
+    task: str,
+    history: list[dict],
+    skip_confirm: bool = True,
+    workspace_root: str = ".",
+    log_path: Optional[Path] = DEFAULT_LOG_PATH,
+) -> list[dict]:
+    """
+    Run one task through the hardened Agent engine and ToolRegistry.
+
+    All terminal rendering is driven exclusively by EventBus subscriptions.
+    All events are persisted to log_path (events.jsonl).
+    """
+    provider = build_provider()
+    event_bus = EventBus(log_path=log_path)
+    attach_cli_renderer(event_bus)
+
+    registry = ToolRegistry(
+        workspace_root=workspace_root,
+        event_bus=event_bus,
+        run_id="default",
+    )
+
+    tools = registry.get_all_tools(agent_name="ShadowX")
+    declarations = registry.get_all_declarations()
+
+    spec = AgentSpec(
+        name="ShadowX",
+        system_prompt=SYSTEM_PROMPT,
+        allowed_tools=list(tools.keys()),
+        max_steps=MAX_STEPS,
+        require_finish_tool=False,
+    )
+
+    event_bus.emit(RunStarted(run_id="default", idea=task))
 
     agent = Agent(
         spec=spec,
         llm=provider,
-        tool_registry=wrapped_tools,
-        tool_declarations=TOOL_DECLARATIONS,
+        tool_registry=tools,
+        tool_declarations=declarations,
         event_bus=event_bus,
     )
 
