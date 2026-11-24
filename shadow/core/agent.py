@@ -17,6 +17,7 @@ from shadow.core.events import (
     ToolCallEvent,
     ToolResultEvent,
     LLMCallEvent,
+    LoopDetected,
 )
 from shadow.core.event_bus import EventBus
 from shadow.core.llm import LLMProvider, LLMResponse, FunctionCallData
@@ -212,6 +213,7 @@ class Agent:
 
         steps_taken = 0
         final_text_response = ""
+        recent_tool_calls: list[tuple[str, str]] = []
 
         while steps_taken < self.spec.max_steps and not self.is_finished:
             steps_taken += 1
@@ -287,8 +289,28 @@ class Agent:
                     )
                 )
 
-                # Permission & existence check
-                if tool_name not in active_tools:
+                try:
+                    arg_str = json.dumps(tool_args, sort_keys=True)
+                except Exception:
+                    arg_str = str(tool_args)
+                call_sig = (tool_name, arg_str)
+                recent_tool_calls.append(call_sig)
+
+                # Permission & loop checks
+                if len(recent_tool_calls) >= 3 and recent_tool_calls[-1] == recent_tool_calls[-2] == recent_tool_calls[-3]:
+                    self.event_bus.emit(
+                        LoopDetected(
+                            run_id=self.run_id,
+                            iteration=steps_taken,
+                            reason=f"Agent repeated tool '{tool_name}' 3 times with identical arguments",
+                        )
+                    )
+                    result_str = (
+                        f"LOOP DETECTED: You have invoked tool '{tool_name}' 3 times in a row with identical arguments. "
+                        f"Execution blocked for this tool call. Please change your strategy."
+                    )
+                    is_err = True
+                elif tool_name not in active_tools:
                     result_str = f"ERROR: Tool '{tool_name}' is not permitted for role '{self.spec.name}'."
                     is_err = True
                 else:

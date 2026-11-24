@@ -162,12 +162,13 @@ ROLE_RULES: dict[str, dict[str, Any]] = {
             "grep_search",
             "run_tests",
         ],
-        "write_paths": ["tests/"],
+        "write_paths": ["tests/", "test_report.json"],
         "forbidden_write_paths": ["src/"],  # Tester cannot modify src/
     },
     "Debugger": {
         "allowed_tools": [
             "read_file",
+            "write_file",
             "edit_file",
             "list_files",
             "glob_files",

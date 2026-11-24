@@ -14,6 +14,7 @@ import sys
 import json
 import time
 import shutil
+import hashlib
 import argparse
 from enum import Enum
 from pathlib import Path
@@ -29,15 +30,32 @@ from shadow.core.events import (
     StageFinished,
     RunFinished,
     ErrorEvent,
+    LoopDetected,
+    TestResultEvent,
 )
 from shadow.core.event_bus import EventBus
 from shadow.core.llm import LLMProvider, GeminiProvider
 from shadow.tools.registry import ToolRegistry
+from shadow.tools.testing import run_tests
 from shadow.agent import build_provider, attach_cli_renderer
-from pipeline.schemas import validate_requirements, validate_design
+from pipeline.schemas import validate_requirements, validate_design, validate_test_report
 from pipeline.git_checkpoints import init_workspace_git, create_checkpoint
 
 console = Console()
+
+
+def compute_failure_signature(failures: dict[str, str]) -> str:
+    """Compute a deterministic SHA256 hash of failed test names and error types."""
+    if not failures:
+        return ""
+    sorted_items = sorted(failures.items())
+    signature_tokens = []
+    for test_name, trace in sorted_items:
+        lines = [line.strip() for line in trace.strip().splitlines() if line.strip()]
+        last_line = lines[-1] if lines else "failed"
+        signature_tokens.append(f"{test_name}:{last_line}")
+    combined = "||".join(signature_tokens)
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]
 
 
 class Stage(str, Enum):
@@ -495,9 +513,285 @@ class Orchestrator:
 
         return False
 
+    def run_stage_testing(self, iteration: int = 1, max_retries: int = 2) -> tuple[bool, dict[str, Any]]:
+        """
+        Execute the TESTING stage:
+        Tester derives independent unit tests derived from ACs in requirements.json,
+        runs pytest, and generates test_report.json.
+        """
+        self.context.update_stage(Stage.TESTING, {"iteration": iteration})
+        self.event_bus.emit(
+            StageStarted(run_id=self.run_id, stage=f"TESTING (iter {iteration})", agent_name="Tester")
+        )
+
+        system_prompt = self._load_prompt("tester")
+        registry = ToolRegistry(
+            workspace_root=self.context.workspace_dir,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        tools = registry.get_tools_for_role("Tester", agent_name="Tester")
+        declarations = registry.get_declarations_for_role("Tester")
+
+        spec = AgentSpec(
+            name="Tester",
+            system_prompt=system_prompt,
+            allowed_tools=list(tools.keys()),
+            max_steps=15,
+            require_finish_tool=True,
+        )
+
+        # Context
+        req_md = ""
+        req_json = ""
+        md_file = self.context.workspace_dir / "docs" / "requirements.md"
+        json_file = self.context.workspace_dir / "docs" / "requirements.json"
+        if md_file.exists():
+            req_md = md_file.read_text(encoding="utf-8")
+        if json_file.exists():
+            req_json = json_file.read_text(encoding="utf-8")
+
+        llm_provider = self.llm or build_provider()
+        agent = Agent(
+            spec=spec,
+            llm=llm_provider,
+            tool_registry=tools,
+            tool_declarations=declarations,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        task_prompt = (
+            f"Requirements:\n=== docs/requirements.md ===\n{req_md}\n\n"
+            f"=== docs/requirements.json ===\n{req_json}\n\n"
+            f"Derive pytest unit tests for each Acceptance Criterion (AC-1, AC-2...) under tests/.\n"
+            f"Tag each test function with its AC id (e.g. def test_ac1_...).\n"
+            f"Execute run_tests('tests') and compile test_report.json matching the schema. Conclude with finish()."
+        )
+        current_history = None
+
+        for attempt in range(max_retries + 1):
+            result = agent.execute(task=task_prompt, initial_history=current_history)
+            self.context.add_tokens(result.total_tokens)
+            current_history = result.history
+
+            # Check test report on disk
+            report_file = self.context.workspace_dir / "test_report.json"
+            report_data: dict[str, Any] = {}
+            if report_file.exists():
+                try:
+                    report_data = json.loads(report_file.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            # Ground truth: execute run_tests in workspace
+            raw_test_output = run_tests("tests", workspace_root=self.context.workspace_dir, event_bus=self.event_bus, run_id=self.run_id)
+
+            # Determine pass/fail status
+            passed = "TEST RUN RESULT: PASSED" in raw_test_output or (
+                report_data.get("passed", 0) > 0 and report_data.get("failed", 0) == 0 and report_data.get("errors", 0) == 0
+            )
+
+            # If report_data has no failures extracted, parse from raw_test_output
+            if not report_data.get("failures") and not passed:
+                failures_map = {}
+                import re
+                blocks = re.findall(r"_{3,}\s*(.*?)\s*_{3,}(.*?)(?=\n_{3,}|\n={3,}|\Z)", raw_test_output, re.DOTALL)
+                for name, trace in blocks:
+                    failures_map[name.strip()] = trace.strip()[:500]
+                report_data.setdefault("failures", failures_map)
+                report_data.setdefault("failed", len(failures_map) or 1)
+
+            if report_file.exists():
+                self.context.record_artifact("test_report", "test_report.json")
+
+            if passed:
+                self.context.checkpoint_git(Stage.TESTING)
+                self.event_bus.emit(
+                    StageFinished(
+                        run_id=self.run_id,
+                        stage="TESTING",
+                        summary=f"Iteration {iteration}: All tests passed.",
+                        artifacts={"test_report": "test_report.json"},
+                    )
+                )
+                return True, report_data
+
+            return False, report_data
+
+        return False, {}
+
+    def run_stage_debugging(
+        self,
+        test_report: dict[str, Any],
+        iteration: int = 1,
+        max_retries: int = 2,
+    ) -> bool:
+        """
+        Execute the DEBUGGING stage:
+        Debugger inspects failures, makes minimal surgical fixes in src/ (cannot touch tests/),
+        records changes in debug_log.md, and re-tests.
+        """
+        self.context.update_stage(Stage.DEBUGGING, {"iteration": iteration})
+        self.event_bus.emit(
+            StageStarted(run_id=self.run_id, stage=f"DEBUGGING (iter {iteration})", agent_name="Debugger")
+        )
+
+        system_prompt = self._load_prompt("debugger")
+        registry = ToolRegistry(
+            workspace_root=self.context.workspace_dir,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        tools = registry.get_tools_for_role("Debugger", agent_name="Debugger")
+        declarations = registry.get_declarations_for_role("Debugger")
+
+        spec = AgentSpec(
+            name="Debugger",
+            system_prompt=system_prompt,
+            allowed_tools=list(tools.keys()),
+            max_steps=20,
+            require_finish_tool=True,
+        )
+
+        failures_str = json.dumps(test_report.get("failures", {}), indent=2)
+
+        task_prompt = (
+            f"Test Failures in Iteration {iteration}:\n{failures_str}\n\n"
+            f"Diagnose the root cause in src/, apply minimal surgical fixes using edit_file, "
+            f"record your diagnosis in debug_log.md, run_tests('tests') to verify, and conclude with finish()."
+        )
+
+        llm_provider = self.llm or build_provider()
+        agent = Agent(
+            spec=spec,
+            llm=llm_provider,
+            tool_registry=tools,
+            tool_declarations=declarations,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        result = agent.execute(task=task_prompt)
+        self.context.add_tokens(result.total_tokens)
+
+        debug_log_path = self.context.workspace_dir / "debug_log.md"
+        if debug_log_path.exists():
+            self.context.record_artifact("debug_log", "debug_log.md")
+
+        self.context.checkpoint_git(Stage.DEBUGGING)
+        self.event_bus.emit(
+            StageFinished(
+                run_id=self.run_id,
+                stage="DEBUGGING",
+                summary=result.summary,
+                artifacts={"debug_log": "debug_log.md"} if debug_log_path.exists() else {},
+            )
+        )
+        return True
+
+    def run_developer_replan(self, test_report: dict[str, Any]) -> bool:
+        """
+        Escalation path: re-prompt Developer when Debugger encounters an unresolvable failure loop.
+        """
+        self.context.update_stage(Stage.CODING, {"escalation": True})
+        self.event_bus.emit(
+            StageStarted(run_id=self.run_id, stage="CODING (escalation)", agent_name="Developer")
+        )
+
+        system_prompt = self._load_prompt("developer")
+        registry = ToolRegistry(
+            workspace_root=self.context.workspace_dir,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        tools = registry.get_tools_for_role("Developer", agent_name="Developer")
+        declarations = registry.get_declarations_for_role("Developer")
+
+        spec = AgentSpec(
+            name="Developer",
+            system_prompt=system_prompt,
+            allowed_tools=list(tools.keys()),
+            max_steps=20,
+            require_finish_tool=True,
+        )
+
+        task_prompt = (
+            f"ESCALATION: The autonomous debugger encountered repeating test failures:\n"
+            f"{json.dumps(test_report.get('failures', {}), indent=2)}\n\n"
+            f"Please re-examine and revise your implementation under src/. "
+            f"Execute the code with run_command to verify and call finish()."
+        )
+
+        llm_provider = self.llm or build_provider()
+        agent = Agent(
+            spec=spec,
+            llm=llm_provider,
+            tool_registry=tools,
+            tool_declarations=declarations,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        result = agent.execute(task=task_prompt)
+        self.context.add_tokens(result.total_tokens)
+        self.context.checkpoint_git(Stage.CODING)
+        return True
+
+    def run_testing_debugging_loop(self, max_iterations: int = 4) -> bool:
+        """
+        Cyclic loop: Tester -> Debugger -> Tester up to max_iterations.
+        Guarded by failure signature hashing and identical loop detection.
+        """
+        failure_signature_history: list[str] = []
+        escalated_to_developer = False
+
+        for iteration in range(1, max_iterations + 1):
+            passed, report = self.run_stage_testing(iteration=iteration)
+            if passed:
+                return True
+
+            if iteration == max_iterations:
+                err_msg = f"Testing-Debugging loop exceeded {max_iterations} iterations without all tests passing."
+                self.context.update_stage(Stage.FAILED, {"reason": err_msg})
+                self.event_bus.emit(ErrorEvent(run_id=self.run_id, message=err_msg))
+                return False
+
+            failures = report.get("failures", {})
+            sig = compute_failure_signature(failures)
+            failure_signature_history.append(sig)
+
+            # Loop Guard: Check if identical failure signature occurs twice in a row
+            if len(failure_signature_history) >= 2 and failure_signature_history[-1] == failure_signature_history[-2]:
+                self.event_bus.emit(
+                    LoopDetected(
+                        run_id=self.run_id,
+                        iteration=iteration,
+                        failure_hash=sig,
+                        reason=f"Identical test failure signature detected twice consecutively in iteration {iteration}",
+                    )
+                )
+
+                if not escalated_to_developer:
+                    self.run_developer_replan(report)
+                    escalated_to_developer = True
+                else:
+                    err_msg = "Identical test failure signature unresolvable after Developer escalation; halting run."
+                    self.context.update_stage(Stage.FAILED, {"reason": err_msg})
+                    self.event_bus.emit(ErrorEvent(run_id=self.run_id, message=err_msg))
+                    return False
+            else:
+                self.run_stage_debugging(report, iteration=iteration)
+
+        return False
+
     def execute_pipeline(self, target_stage: Stage = Stage.DONE) -> bool:
         """
-        Run the factory state machine through ANALYSIS -> DESIGN -> CODING up to target_stage.
+        Run the factory state machine through ANALYSIS -> DESIGN -> CODING -> (TESTING <-> DEBUGGING)*
+        up to target_stage.
         """
         self.event_bus.emit(RunStarted(run_id=self.run_id, idea=self.idea))
 
@@ -529,10 +823,16 @@ class Orchestrator:
             self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
             return False
 
-        if target_stage in (Stage.CODING, Stage.DONE):
+        if target_stage == Stage.CODING:
             self.context.update_stage(Stage.DONE)
             self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
             return True
+
+        # Stage 4: Testing & Debugging Feedback Loop
+        if not self.run_testing_debugging_loop(max_iterations=4):
+            self.context.update_stage(Stage.FAILED)
+            self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
+            return False
 
         self.context.update_stage(Stage.DONE)
         self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))

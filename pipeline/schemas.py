@@ -84,11 +84,19 @@ class TestReportArtifact(BaseModel):
     """
     Schema for test_report.json produced by the Tester.
     """
-    passed: int
-    failed: int
-    errors: int
+    passed: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    errors: int = Field(default=0, ge=0)
     ac_coverage: dict[str, str] = Field(..., description="Map of AC-x to test function and status")
     failures: dict[str, str] = Field(default_factory=dict, description="Test name to failure stacktrace")
+
+    @field_validator("ac_coverage")
+    @classmethod
+    def validate_ac_coverage_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        for key in v.keys():
+            if not re.match(r"^AC-\d+$", key):
+                raise ValueError(f"AC coverage keys must follow pattern 'AC-1', 'AC-2', found: '{key}'")
+        return v
 
 
 class ReviewReportArtifact(BaseModel):
@@ -98,6 +106,22 @@ class ReviewReportArtifact(BaseModel):
     passed: bool
     traceability_matrix: dict[str, dict[str, Any]] = Field(..., description="AC to Test to Status")
     issues: list[dict[str, str]] = Field(default_factory=list)
+
+
+def validate_test_report(content: Union[str, dict[str, Any]]) -> tuple[bool, str, TestReportArtifact | None]:
+    """
+    Validate raw JSON string or dictionary against TestReportArtifact schema.
+
+    Returns: (is_valid, error_message, parsed_model_or_none)
+    """
+    try:
+        data = json.loads(content) if isinstance(content, str) else content
+        artifact = TestReportArtifact.model_validate(data)
+        return True, "", artifact
+    except json.JSONDecodeError as jde:
+        return False, f"Invalid JSON syntax in test_report.json: {jde}", None
+    except Exception as e:
+        return False, f"Test report schema validation failed: {e}", None
 
 
 def validate_requirements(content: Union[str, dict[str, Any]]) -> tuple[bool, str, RequirementsArtifact | None]:

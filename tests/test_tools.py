@@ -289,7 +289,11 @@ def test_tool_registry_debugger_permissions(tmp_path: Path):
 
     debugger_tools = registry.get_tools_for_role("Debugger")
     assert "edit_file" in debugger_tools
-    assert "write_file" not in debugger_tools
+    assert "write_file" in debugger_tools
+
+    # Debugger can write debug_log.md
+    res_log = debugger_tools["write_file"]("debug_log.md", "# Debug Log\nFixed bug.")
+    assert "OK" in res_log
 
     # Setup file in src/ and tests/
     (ws / "src").mkdir()

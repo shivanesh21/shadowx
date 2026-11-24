@@ -156,3 +156,45 @@ def test_design_invalid_ac_mapping_keys():
     is_valid, err, model = validate_design(data)
     assert is_valid is False
     assert "AC mapping keys must follow pattern 'AC-1'" in err
+
+
+# ---------------------------------------------------------------------------
+# Test Report Schema Tests
+# ---------------------------------------------------------------------------
+
+def test_valid_test_report_artifact():
+    from pipeline.schemas import validate_test_report
+    data = {
+        "passed": 2,
+        "failed": 0,
+        "errors": 0,
+        "ac_coverage": {
+            "AC-1": "test_ac1_add",
+            "AC-2": "test_ac2_sub",
+        },
+        "failures": {},
+    }
+
+    is_valid, err, model = validate_test_report(data)
+    assert is_valid is True
+    assert err == ""
+    assert model is not None
+    assert model.passed == 2
+    assert "AC-1" in model.ac_coverage
+
+
+def test_test_report_invalid_ac_keys():
+    from pipeline.schemas import validate_test_report
+    data = {
+        "passed": 1,
+        "failed": 1,
+        "errors": 0,
+        "ac_coverage": {
+            "invalid_key": "test_func",
+        },
+        "failures": {"test_func": "AssertionError"},
+    }
+
+    is_valid, err, model = validate_test_report(data)
+    assert is_valid is False
+    assert "AC coverage keys must follow pattern 'AC-1'" in err
