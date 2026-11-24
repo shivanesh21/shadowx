@@ -5,8 +5,10 @@ test_schemas.py — Unit tests for Pydantic artifact schemas.
 import pytest
 from pipeline.schemas import (
     RequirementsArtifact,
+    DesignArtifact,
     UserStory,
     validate_requirements,
+    validate_design,
 )
 
 
@@ -82,3 +84,75 @@ def test_validate_requirements_invalid_json_string():
     is_valid, err, model = validate_requirements("not a json string {{{")
     assert is_valid is False
     assert "Invalid JSON syntax" in err
+
+
+# ---------------------------------------------------------------------------
+# Design Schema Tests
+# ---------------------------------------------------------------------------
+
+def test_valid_design_artifact():
+    data = {
+        "project_name": "Calculator Library",
+        "tech_stack": ["Python 3.10+"],
+        "modules": [
+            {
+                "file_path": "src/calc.py",
+                "description": "Core calculation logic",
+                "interfaces": ["def add(a: float, b: float) -> float"],
+            }
+        ],
+        "data_models": [],
+        "mermaid_diagram": "flowchart TD\n  User --> Calc[Calculator Module]",
+        "ac_mapping": {
+            "AC-1": ["src/calc.py"],
+        },
+    }
+
+    is_valid, err, model = validate_design(data)
+    assert is_valid is True
+    assert err == ""
+    assert model is not None
+    assert model.project_name == "Calculator Library"
+    assert "AC-1" in model.ac_mapping
+
+
+def test_design_invalid_mermaid_syntax():
+    data = {
+        "project_name": "Calculator",
+        "tech_stack": ["Python"],
+        "modules": [{"file_path": "src/calc.py", "description": "calc", "interfaces": []}],
+        "mermaid_diagram": "this is not a valid diagram header",
+        "ac_mapping": {"AC-1": ["src/calc.py"]},
+    }
+
+    is_valid, err, model = validate_design(data)
+    assert is_valid is False
+    assert "Mermaid diagram must start with a valid diagram type" in err
+
+
+def test_design_empty_mermaid():
+    data = {
+        "project_name": "Calculator",
+        "tech_stack": ["Python"],
+        "modules": [{"file_path": "src/calc.py", "description": "calc", "interfaces": []}],
+        "mermaid_diagram": "   ",
+        "ac_mapping": {"AC-1": ["src/calc.py"]},
+    }
+
+    is_valid, err, model = validate_design(data)
+    assert is_valid is False
+    assert "Mermaid diagram cannot be empty" in err
+
+
+def test_design_invalid_ac_mapping_keys():
+    data = {
+        "project_name": "Calculator",
+        "tech_stack": ["Python"],
+        "modules": [{"file_path": "src/calc.py", "description": "calc", "interfaces": []}],
+        "mermaid_diagram": "flowchart TD\n  A --> B",
+        "ac_mapping": {"bad_key": ["src/calc.py"]},
+    }
+
+    is_valid, err, model = validate_design(data)
+    assert is_valid is False
+    assert "AC mapping keys must follow pattern 'AC-1'" in err

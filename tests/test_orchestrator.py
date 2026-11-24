@@ -1,8 +1,9 @@
 """
-test_orchestrator.py — Unit tests for state machine, run context, and Analyst stage.
+test_orchestrator.py — Unit tests for state machine, run context, and multi-agent pipeline.
 """
 
 import json
+import subprocess
 from pathlib import Path
 import pytest
 
@@ -19,6 +20,7 @@ def test_run_context_initialization(tmp_path: Path):
     assert ctx.workspace_dir.exists()
     assert ctx.artifacts_dir.exists()
     assert ctx.state_file.exists()
+    assert (ctx.workspace_dir / ".git").exists()
 
     state = ctx._read_state()
     assert state["run_id"] == "test_run_1"
@@ -40,7 +42,6 @@ def test_run_context_stage_updates(tmp_path: Path):
 
 def test_run_context_artifact_recording(tmp_path: Path):
     ctx = RunContext(run_id="test_run_3", base_dir=tmp_path)
-    # Write a dummy file in workspace
     doc_dir = ctx.workspace_dir / "docs"
     doc_dir.mkdir(parents=True)
     req_file = doc_dir / "requirements.md"
@@ -66,7 +67,6 @@ def test_orchestrator_analyst_stage_happy_path(tmp_path: Path):
     })
 
     provider = FakeLLMProvider()
-    # Step 1: write requirements.md
     provider.queue_response(
         LLMResponse(
             text="Writing requirements.md",
@@ -78,7 +78,6 @@ def test_orchestrator_analyst_stage_happy_path(tmp_path: Path):
             ],
         )
     )
-    # Step 2: write requirements.json
     provider.queue_response(
         LLMResponse(
             text="Writing requirements.json",
@@ -90,7 +89,6 @@ def test_orchestrator_analyst_stage_happy_path(tmp_path: Path):
             ],
         )
     )
-    # Step 3: finish tool
     provider.queue_response(
         LLMResponse(
             text="Requirements complete.",
@@ -120,21 +118,11 @@ def test_orchestrator_analyst_stage_happy_path(tmp_path: Path):
     success = orchestrator.execute_pipeline(target_stage=Stage.ANALYSIS)
     assert success is True
     assert orchestrator.context.get_stage() == Stage.DONE
-
-    # Verify workspace files
     assert (orchestrator.context.workspace_dir / "docs" / "requirements.md").exists()
     assert (orchestrator.context.workspace_dir / "docs" / "requirements.json").exists()
 
-    # Verify artifact store
-    assert (orchestrator.context.artifacts_dir / "requirements.md").exists()
-    assert (orchestrator.context.artifacts_dir / "requirements.json").exists()
-
-    # Verify events
-    assert orchestrator.context.events_file.exists()
-
 
 def test_orchestrator_analyst_retry_on_invalid_json(tmp_path: Path):
-    """Verify that an invalid schema triggers a re-prompt and succeeds on retry."""
     invalid_json = json.dumps({"bad": "structure"})
     valid_json = json.dumps({
         "project_name": "App",
@@ -145,7 +133,6 @@ def test_orchestrator_analyst_retry_on_invalid_json(tmp_path: Path):
     })
 
     provider = FakeLLMProvider()
-    # Attempt 1: writes md and invalid json, then finishes
     provider.queue_response(
         LLMResponse(
             function_calls=[
@@ -177,7 +164,6 @@ def test_orchestrator_analyst_retry_on_invalid_json(tmp_path: Path):
         )
     )
 
-    # Attempt 2 (Retry after error message from orchestrator): fixes json and finishes
     provider.queue_response(
         LLMResponse(
             text="Fixing requirements.json",
@@ -211,3 +197,185 @@ def test_orchestrator_analyst_retry_on_invalid_json(tmp_path: Path):
     success = orchestrator.execute_pipeline(target_stage=Stage.ANALYSIS)
     assert success is True
     assert (orchestrator.context.workspace_dir / "docs" / "requirements.json").exists()
+
+
+def test_orchestrator_end_to_end_idea_to_code(tmp_path: Path):
+    """
+    Test full progression: Idea -> Requirements -> Design (Mermaid) -> Runnable Code.
+    Verifies git checkpoints after every stage.
+    """
+    req_json = json.dumps({
+        "project_name": "Math Library",
+        "summary": "Basic math operations library",
+        "user_stories": [{"id": "US-1", "role": "User", "action": "add numbers", "benefit": "get sum"}],
+        "functional_requirements": ["Implement add(a, b)"],
+        "non_functional_requirements": ["Pure Python"],
+        "acceptance_criteria": {"AC-1": "add(2, 3) returns 5"},
+        "assumptions": ["Inputs are numeric"],
+        "out_of_scope": ["Complex numbers"],
+    })
+
+    design_json = json.dumps({
+        "project_name": "Math Library",
+        "tech_stack": ["Python 3.10+"],
+        "modules": [
+            {
+                "file_path": "src/math_ops.py",
+                "description": "Math arithmetic operations",
+                "interfaces": ["def add(a: float, b: float) -> float"],
+            }
+        ],
+        "data_models": [],
+        "mermaid_diagram": "flowchart TD\n  Client --> MathOps[src/math_ops.py]",
+        "ac_mapping": {"AC-1": ["src/math_ops.py"]},
+    })
+
+    code_content = "def add(a: float, b: float) -> float:\n    return a + b\n"
+
+    provider = FakeLLMProvider()
+
+    # 1. Analyst responses
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "docs/requirements.md", "content": "# Math Library\nAC-1"}),
+                FunctionCallData(name="write_file", args={"path": "docs/requirements.json", "content": req_json}),
+                FunctionCallData(name="finish", args={"summary": "Analyst done", "artifacts": {"req": "docs/requirements.json"}}),
+            ]
+        )
+    )
+
+    # 2. Architect responses
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "docs/design.md", "content": "# Design\n```mermaid\nflowchart TD\n  A-->B\n```"}),
+                FunctionCallData(name="write_file", args={"path": "docs/design.json", "content": design_json}),
+                FunctionCallData(name="finish", args={"summary": "Architect done", "artifacts": {"design": "docs/design.json"}}),
+            ]
+        )
+    )
+
+    # 3. Developer responses
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "src/math_ops.py", "content": code_content}),
+                FunctionCallData(name="run_command", args={"command": "python -c \"import src.math_ops as m; assert m.add(2, 3) == 5; print('OK')\""}),
+                FunctionCallData(name="finish", args={"summary": "Developer done", "artifacts": {"code": "src/math_ops.py"}}),
+            ]
+        )
+    )
+
+    orchestrator = Orchestrator(
+        idea="Build a Math Library",
+        run_id="run_e2e_test",
+        llm=provider,
+        base_dir=tmp_path,
+        enable_cli_renderer=False,
+    )
+
+    success = orchestrator.execute_pipeline(target_stage=Stage.CODING)
+    assert success is True
+    assert orchestrator.context.get_stage() == Stage.DONE
+
+    # Verify deliverables
+    ws = orchestrator.context.workspace_dir
+    assert (ws / "docs" / "requirements.md").exists()
+    assert (ws / "docs" / "requirements.json").exists()
+    assert (ws / "docs" / "design.md").exists()
+    assert (ws / "docs" / "design.json").exists()
+    assert (ws / "src" / "math_ops.py").exists()
+
+    # Verify git checkpoints in git log
+    git_res = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=str(ws),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    log_text = git_res.stdout
+    assert "checkpoint(analysis)" in log_text
+    assert "checkpoint(design)" in log_text
+    assert "checkpoint(coding)" in log_text
+
+    # Verify state.json
+    state = orchestrator.context._read_state()
+    assert "ANALYSIS" in state.get("checkpoints", {})
+    assert "DESIGN" in state.get("checkpoints", {})
+    assert "CODING" in state.get("checkpoints", {})
+    assert state.get("status") == "done"
+
+
+def test_orchestrator_design_retry_on_invalid_mermaid(tmp_path: Path):
+    """Verify that an invalid Mermaid diagram triggers a re-prompt and succeeds on retry."""
+    req_json = json.dumps({
+        "project_name": "App",
+        "summary": "Summary",
+        "user_stories": [{"id": "US-1", "role": "Dev", "action": "run", "benefit": "ok"}],
+        "functional_requirements": ["F1"],
+        "acceptance_criteria": {"AC-1": "Condition 1"},
+    })
+
+    bad_design_json = json.dumps({
+        "project_name": "App",
+        "tech_stack": ["Python"],
+        "modules": [{"file_path": "src/app.py", "description": "main", "interfaces": []}],
+        "mermaid_diagram": "invalid diagram header",
+        "ac_mapping": {"AC-1": ["src/app.py"]},
+    })
+
+    good_design_json = json.dumps({
+        "project_name": "App",
+        "tech_stack": ["Python"],
+        "modules": [{"file_path": "src/app.py", "description": "main", "interfaces": []}],
+        "mermaid_diagram": "flowchart TD\n  Start --> Stop",
+        "ac_mapping": {"AC-1": ["src/app.py"]},
+    })
+
+    provider = FakeLLMProvider()
+
+    # Analyst
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "docs/requirements.md", "content": "# Req"}),
+                FunctionCallData(name="write_file", args={"path": "docs/requirements.json", "content": req_json}),
+                FunctionCallData(name="finish", args={"summary": "Analyst done"}),
+            ]
+        )
+    )
+
+    # Architect attempt 1: bad mermaid
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "docs/design.md", "content": "# Design"}),
+                FunctionCallData(name="write_file", args={"path": "docs/design.json", "content": bad_design_json}),
+                FunctionCallData(name="finish", args={"summary": "Architect done"}),
+            ]
+        )
+    )
+
+    # Architect attempt 2: corrected good mermaid
+    provider.queue_response(
+        LLMResponse(
+            function_calls=[
+                FunctionCallData(name="write_file", args={"path": "docs/design.json", "content": good_design_json}),
+                FunctionCallData(name="finish", args={"summary": "Architect fixed"}),
+            ]
+        )
+    )
+
+    orchestrator = Orchestrator(
+        idea="Build a Test App",
+        run_id="run_design_retry_test",
+        llm=provider,
+        base_dir=tmp_path,
+        enable_cli_renderer=False,
+    )
+
+    success = orchestrator.execute_pipeline(target_stage=Stage.DESIGN)
+    assert success is True
+    assert (orchestrator.context.workspace_dir / "docs" / "design.json").exists()

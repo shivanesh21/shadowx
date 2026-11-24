@@ -8,6 +8,7 @@ from pipeline.schemas import (
     TestReportArtifact,
     ReviewReportArtifact,
     validate_requirements,
+    validate_design,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "TestReportArtifact",
     "ReviewReportArtifact",
     "validate_requirements",
+    "validate_design",
 ]

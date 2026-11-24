@@ -5,6 +5,7 @@ Coordinates multi-agent software development lifecycle:
 ANALYSIS -> DESIGN -> CODING -> TESTING -> (DEBUGGING -> TESTING)* -> REVIEW -> DOCS -> DONE
 
 Agents communicate only through filesystem artifacts and validated Pydantic schemas.
+Git checkpoints are captured after every stage completion.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import shutil
 import argparse
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Union, Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -33,7 +34,8 @@ from shadow.core.event_bus import EventBus
 from shadow.core.llm import LLMProvider, GeminiProvider
 from shadow.tools.registry import ToolRegistry
 from shadow.agent import build_provider, attach_cli_renderer
-from pipeline.schemas import validate_requirements
+from pipeline.schemas import validate_requirements, validate_design
+from pipeline.git_checkpoints import init_workspace_git, create_checkpoint
 
 console = Console()
 
@@ -66,6 +68,7 @@ class RunContext:
         # Initialize directory tree
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        init_workspace_git(self.workspace_dir)
 
         if not self.state_file.exists():
             self._write_state({
@@ -77,6 +80,7 @@ class RunContext:
                 "status": "pending",
                 "tokens": 0,
                 "artifacts": {},
+                "checkpoints": {},
             })
 
     def _read_state(self) -> dict[str, Any]:
@@ -123,6 +127,15 @@ class RunContext:
         state["tokens"] = state.get("tokens", 0) + tokens
         self._write_state(state)
 
+    def checkpoint_git(self, stage: Stage) -> str:
+        """Create a git snapshot for the current stage and record in state.json."""
+        commit_hash = create_checkpoint(self.workspace_dir, stage.value)
+        if commit_hash:
+            state = self._read_state()
+            state.setdefault("checkpoints", {})[stage.value] = commit_hash
+            self._write_state(state)
+        return commit_hash
+
 
 class Orchestrator:
     """
@@ -157,7 +170,6 @@ class Orchestrator:
         """
         Execute the ANALYSIS stage:
         Analyst agent transforms idea -> docs/requirements.md and docs/requirements.json.
-        Validates artifact with Pydantic and re-prompts on failure (up to max_retries).
         """
         self.context.update_stage(Stage.ANALYSIS)
         self.event_bus.emit(StageStarted(run_id=self.run_id, stage="ANALYSIS", agent_name="Analyst"))
@@ -228,9 +240,9 @@ class Orchestrator:
                         },
                     )
                 )
+                self.context.checkpoint_git(Stage.ANALYSIS)
                 return True
 
-            # If validation failed, re-prompt agent
             err_msg = "\n".join(errors) or "Did not conclude with finish() tool."
             if attempt < max_retries:
                 task_prompt = (
@@ -255,15 +267,242 @@ class Orchestrator:
 
         return False
 
+    def run_stage_design(self, max_retries: int = 2) -> bool:
+        """
+        Execute the DESIGN stage:
+        Architect agent reads requirements -> docs/design.md (with Mermaid) and docs/design.json.
+        """
+        self.context.update_stage(Stage.DESIGN)
+        self.event_bus.emit(StageStarted(run_id=self.run_id, stage="DESIGN", agent_name="Architect"))
+
+        system_prompt = self._load_prompt("architect")
+        registry = ToolRegistry(
+            workspace_root=self.context.workspace_dir,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        tools = registry.get_tools_for_role("Architect", agent_name="Architect")
+        declarations = registry.get_declarations_for_role("Architect")
+
+        spec = AgentSpec(
+            name="Architect",
+            system_prompt=system_prompt,
+            allowed_tools=list(tools.keys()),
+            max_steps=15,
+            require_finish_tool=True,
+        )
+
+        # Load requirements as context
+        req_md = ""
+        req_json = ""
+        md_file = self.context.workspace_dir / "docs" / "requirements.md"
+        json_file = self.context.workspace_dir / "docs" / "requirements.json"
+        if md_file.exists():
+            req_md = md_file.read_text(encoding="utf-8")
+        if json_file.exists():
+            req_json = json_file.read_text(encoding="utf-8")
+
+        llm_provider = self.llm or build_provider()
+        agent = Agent(
+            spec=spec,
+            llm=llm_provider,
+            tool_registry=tools,
+            tool_declarations=declarations,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        task_prompt = (
+            f"Requirements Specification:\n\n=== docs/requirements.md ===\n{req_md}\n\n"
+            f"=== docs/requirements.json ===\n{req_json}\n\n"
+            f"Design the architecture for this system. Produce docs/design.md (with a Mermaid diagram) "
+            f"and docs/design.json, mapping all AC criteria to implementing modules, and conclude with finish()."
+        )
+        current_history = None
+
+        for attempt in range(max_retries + 1):
+            result = agent.execute(task=task_prompt, initial_history=current_history)
+            self.context.add_tokens(result.total_tokens)
+            current_history = result.history
+
+            # Validate outputs
+            design_md_path = self.context.workspace_dir / "docs" / "design.md"
+            design_json_path = self.context.workspace_dir / "docs" / "design.json"
+
+            errors = []
+            if not design_md_path.exists() or len(design_md_path.read_text(encoding="utf-8").strip()) == 0:
+                errors.append("docs/design.md was not created or is empty.")
+
+            if not design_json_path.exists():
+                errors.append("docs/design.json was not created.")
+            else:
+                is_valid, validation_err, _ = validate_design(design_json_path.read_text(encoding="utf-8"))
+                if not is_valid:
+                    errors.append(validation_err)
+
+            if not errors and result.finished_via_tool:
+                # Success! Record artifacts and stage finish
+                self.context.record_artifact("design_md", "docs/design.md")
+                self.context.record_artifact("design_json", "docs/design.json")
+                self.event_bus.emit(
+                    StageFinished(
+                        run_id=self.run_id,
+                        stage="DESIGN",
+                        summary=result.summary,
+                        artifacts={
+                            "design_md": "docs/design.md",
+                            "design_json": "docs/design.json",
+                        },
+                    )
+                )
+                self.context.checkpoint_git(Stage.DESIGN)
+                return True
+
+            err_msg = "\n".join(errors) or "Did not conclude with finish() tool."
+            if attempt < max_retries:
+                task_prompt = (
+                    f"ATTENTION: Your design deliverables failed validation:\n{err_msg}\n\n"
+                    f"Please correct the errors using write_file under docs/ and call finish() again."
+                )
+                self.event_bus.emit(
+                    ErrorEvent(
+                        run_id=self.run_id,
+                        message=f"Architect artifact validation attempt {attempt + 1} failed: {err_msg}",
+                    )
+                )
+            else:
+                self.context.update_stage(Stage.FAILED, {"reason": err_msg})
+                self.event_bus.emit(
+                    ErrorEvent(
+                        run_id=self.run_id,
+                        message=f"Architect stage failed after {max_retries + 1} attempts: {err_msg}",
+                    )
+                )
+                return False
+
+        return False
+
+    def run_stage_coding(self, max_retries: int = 2) -> bool:
+        """
+        Execute the CODING stage:
+        Developer agent implements all modules under src/ according to requirements and design,
+        and runs the code at least once using run_command to verify it executes cleanly.
+        """
+        self.context.update_stage(Stage.CODING)
+        self.event_bus.emit(StageStarted(run_id=self.run_id, stage="CODING", agent_name="Developer"))
+
+        system_prompt = self._load_prompt("developer")
+        registry = ToolRegistry(
+            workspace_root=self.context.workspace_dir,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        tools = registry.get_tools_for_role("Developer", agent_name="Developer")
+        declarations = registry.get_declarations_for_role("Developer")
+
+        spec = AgentSpec(
+            name="Developer",
+            system_prompt=system_prompt,
+            allowed_tools=list(tools.keys()),
+            max_steps=20,
+            require_finish_tool=True,
+        )
+
+        # Gather context
+        context_files = {}
+        for p in ["docs/requirements.md", "docs/requirements.json", "docs/design.md", "docs/design.json"]:
+            fp = self.context.workspace_dir / p
+            if fp.exists():
+                context_files[p] = fp.read_text(encoding="utf-8")
+
+        context_str = "\n\n".join(f"=== {k} ===\n{v}" for k, v in context_files.items())
+
+        llm_provider = self.llm or build_provider()
+        agent = Agent(
+            spec=spec,
+            llm=llm_provider,
+            tool_registry=tools,
+            tool_declarations=declarations,
+            event_bus=self.event_bus,
+            run_id=self.run_id,
+        )
+
+        task_prompt = (
+            f"Specifications:\n\n{context_str}\n\n"
+            f"Implement all source modules specified in docs/design.json under src/.\n"
+            f"Execute your code using run_command to verify it runs without errors.\n"
+            f"Do not write tests. Conclude with finish() when verified."
+        )
+        current_history = None
+
+        for attempt in range(max_retries + 1):
+            result = agent.execute(task=task_prompt, initial_history=current_history)
+            self.context.add_tokens(result.total_tokens)
+            current_history = result.history
+
+            # Validate outputs
+            src_dir = self.context.workspace_dir / "src"
+            py_files = list(src_dir.rglob("*.py")) if src_dir.exists() else []
+            valid_py_files = [f for f in py_files if f.stat().st_size > 0]
+
+            errors = []
+            if not src_dir.exists() or len(valid_py_files) == 0:
+                errors.append("No non-empty Python files were found under src/.")
+
+            if not errors and result.finished_via_tool:
+                # Record source artifacts
+                artifacts_map = {}
+                for f in valid_py_files:
+                    rel = str(f.relative_to(self.context.workspace_dir)).replace("\\", "/")
+                    name = f.stem
+                    artifacts_map[name] = rel
+                    self.context.record_artifact(name, rel)
+
+                self.event_bus.emit(
+                    StageFinished(
+                        run_id=self.run_id,
+                        stage="CODING",
+                        summary=result.summary,
+                        artifacts=artifacts_map,
+                    )
+                )
+                self.context.checkpoint_git(Stage.CODING)
+                return True
+
+            err_msg = "\n".join(errors) or "Did not conclude with finish() tool."
+            if attempt < max_retries:
+                task_prompt = (
+                    f"ATTENTION: Your implementation failed validation:\n{err_msg}\n\n"
+                    f"Please write working Python files under src/, verify them with run_command, and call finish()."
+                )
+                self.event_bus.emit(
+                    ErrorEvent(
+                        run_id=self.run_id,
+                        message=f"Developer implementation attempt {attempt + 1} failed: {err_msg}",
+                    )
+                )
+            else:
+                self.context.update_stage(Stage.FAILED, {"reason": err_msg})
+                self.event_bus.emit(
+                    ErrorEvent(
+                        run_id=self.run_id,
+                        message=f"Developer stage failed after {max_retries + 1} attempts: {err_msg}",
+                    )
+                )
+                return False
+
+        return False
+
     def execute_pipeline(self, target_stage: Stage = Stage.DONE) -> bool:
         """
-        Run the factory state machine up to target_stage.
+        Run the factory state machine through ANALYSIS -> DESIGN -> CODING up to target_stage.
         """
         self.event_bus.emit(RunStarted(run_id=self.run_id, idea=self.idea))
 
         # Stage 1: Analysis
-        success = self.run_stage_analyst()
-        if not success:
+        if not self.run_stage_analyst():
             self.context.update_stage(Stage.FAILED)
             self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
             return False
@@ -273,8 +512,28 @@ class Orchestrator:
             self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
             return True
 
-        # For this milestone, the pipeline successfully executes through Analysis
-        # Remaining stages (DESIGN, CODING, TESTING, REVIEW, DOCS) will follow in next milestones
+        # Stage 2: Design
+        if not self.run_stage_design():
+            self.context.update_stage(Stage.FAILED)
+            self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
+            return False
+
+        if target_stage == Stage.DESIGN:
+            self.context.update_stage(Stage.DONE)
+            self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
+            return True
+
+        # Stage 3: Coding
+        if not self.run_stage_coding():
+            self.context.update_stage(Stage.FAILED)
+            self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
+            return False
+
+        if target_stage in (Stage.CODING, Stage.DONE):
+            self.context.update_stage(Stage.DONE)
+            self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
+            return True
+
         self.context.update_stage(Stage.DONE)
         self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
         return True
