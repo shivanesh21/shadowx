@@ -163,16 +163,44 @@ def main():
         action="store_true",
         help="Run ShadowX Factory multi-agent software pipeline on the task/idea.",
     )
+    parser.add_argument(
+        "--gates",
+        action="store_true",
+        help="Enable human-in-the-loop approval gates after requirements and design.",
+    )
+    parser.add_argument(
+        "--resume",
+        default=None,
+        help="Resume an existing factory run by run_id.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=100000,
+        help="Maximum total token budget for the factory run.",
+    )
+    parser.add_argument(
+        "--max-time",
+        type=float,
+        default=600.0,
+        help="Maximum wall-clock execution time in seconds.",
+    )
 
     args = parser.parse_args()
     skip_confirm = not args.confirm
 
-    if args.factory:
-        if not args.task:
+    if args.factory or args.resume:
+        if not args.task and not args.resume:
             console.print("[bold red]Error:[/bold red] --factory requires an idea, e.g. shadowx --factory 'CLI todo app'")
             sys.exit(1)
-        from pipeline.orchestrator import run_factory
-        run_factory(args.task)
+        from pipeline.orchestrator import run_factory, BudgetConfig
+        budget = BudgetConfig(max_run_tokens=args.max_tokens, max_wall_time_s=args.max_time)
+        run_factory(
+            idea=args.task or "",
+            approval_gates=args.gates,
+            resume_id=args.resume,
+            budget=budget,
+        )
         return
 
     if args.task:

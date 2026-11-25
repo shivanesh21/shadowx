@@ -180,7 +180,7 @@ ROLE_RULES: dict[str, dict[str, Any]] = {
         "forbidden_write_paths": ["tests/"],  # Cannot edit tests to force a pass
     },
     "Reviewer": {
-        "allowed_tools": ["read_file", "list_files", "glob_files", "grep_search"],
+        "allowed_tools": ["read_file", "write_file", "list_files", "glob_files", "grep_search"],
         "write_paths": ["docs/review.md", "review.md"],
     },
     "Documenter": {

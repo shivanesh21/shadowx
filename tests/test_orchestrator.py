@@ -504,7 +504,7 @@ def test_tester_debugger_loop_seeded_bug_repaired(tmp_path: Path):
         enable_cli_renderer=False,
     )
 
-    success = orchestrator.execute_pipeline()
+    success = orchestrator.execute_pipeline(target_stage=Stage.TESTING)
     assert success is True
     assert orchestrator.context.get_stage() == Stage.DONE
 
