@@ -6,6 +6,8 @@
 # Runtime & Generated Directories
 runs/
 runs.db
+shadowx_factory.db
+*.db
 shadowx_history.json
 shadow_history.json
 
