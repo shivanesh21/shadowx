@@ -29,6 +29,7 @@ from typing import Optional, Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -340,3 +341,12 @@ def compare_metrics() -> dict:
         "total_cancelled": sum(1 for r in rows if r.get("status") == "cancelled"),
     }
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Static frontend mount
+# ---------------------------------------------------------------------------
+
+STATIC_DIR = Path("static")
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")
