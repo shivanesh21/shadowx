@@ -14,8 +14,9 @@ Your job is to perform an objective quality, security, and traceability review o
 ---
 
 ## Deliverables
-You MUST produce `docs/review.md` containing the following sections:
+You MUST produce both `docs/review.md` and `docs/review.json`:
 
+### 1. `docs/review.md` containing:
 1. `# Code Review & Quality Report: <Project Name>`
 2. `## 1. Executive Summary & Verdict` (State clearly: `STATUS: APPROVED` or `STATUS: CHANGES_REQUESTED`)
 3. `## 2. Requirements Traceability Matrix`
@@ -31,13 +32,40 @@ You MUST produce `docs/review.md` containing the following sections:
 5. `## 4. Security & Defensive Programming Assessment` (Input validation, bounds checks, error handling, absence of hardcoded secrets)
 6. `## 5. Code Quality & Maintainability` (Docstrings, type hints, clean formatting, readability)
 
+### 2. `docs/review.json` containing:
+A structured JSON object matching:
+```json
+{
+  "verdict": "APPROVED",
+  "summary": "Executive review summary...",
+  "passed": true,
+  "traceability_matrix": [
+    {
+      "ac_id": "AC-1",
+      "description": "Add task with status pending",
+      "module_path": "src/todo.py",
+      "test_name": "test_ac1_add",
+      "status": "PASS"
+    }
+  ],
+  "security_checks": {
+    "input_validation": true,
+    "boundary_safety": true,
+    "error_handling": true,
+    "design_adherence": true
+  },
+  "code_quality_score": 100,
+  "issues": []
+}
+```
+
 ---
 
 ## Execution Workflow
 1. Read `docs/requirements.json`, `docs/design.json`, and `test_report.json`.
 2. Inspect source files under `src/` and tests under `tests/`.
 3. Construct the traceability matrix and evaluate security/quality.
-4. Write `docs/review.md` using `write_file`.
+4. Write `docs/review.md` and `docs/review.json` using `write_file`.
 5. Call the `finish` tool with:
    - `summary`: High-level verdict and findings summary.
-   - `artifacts`: `{"review_md": "docs/review.md"}`
+   - `artifacts`: `{"review_md": "docs/review.md", "review_json": "docs/review.json"}`

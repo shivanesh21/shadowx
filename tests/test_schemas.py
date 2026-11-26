@@ -198,3 +198,51 @@ def test_test_report_invalid_ac_keys():
     is_valid, err, model = validate_test_report(data)
     assert is_valid is False
     assert "AC coverage keys must follow pattern 'AC-1'" in err
+
+
+def test_valid_review_report_artifact():
+    from pipeline.schemas import validate_review_report, ReviewReportArtifact
+    data = {
+        "verdict": "APPROVED",
+        "summary": "All acceptance criteria verified against implementation and tests.",
+        "passed": True,
+        "traceability_matrix": [
+            {
+                "ac_id": "AC-1",
+                "description": "Add task with status pending",
+                "module_path": "src/todo.py",
+                "test_name": "test_ac1_add",
+                "status": "PASS",
+            },
+            {
+                "ac_id": "AC-2",
+                "description": "List active tasks",
+                "module_path": "src/todo.py",
+                "test_name": "test_ac2_list",
+                "status": "PASS",
+            },
+        ],
+        "security_checks": {
+            "input_validation": True,
+            "boundary_safety": True,
+            "error_handling": True,
+        },
+        "code_quality_score": 98,
+        "issues": [],
+    }
+
+    is_valid, err, model = validate_review_report(data)
+    assert is_valid is True
+    assert err == ""
+    assert model is not None
+    assert model.verdict == "APPROVED"
+    assert len(model.traceability_matrix) == 2
+    assert model.traceability_matrix[0].ac_id == "AC-1"
+    assert model.traceability_matrix[0].status == "PASS"
+
+
+def test_review_report_invalid_syntax():
+    from pipeline.schemas import validate_review_report
+    is_valid, err, model = validate_review_report("{bad_json")
+    assert is_valid is False
+    assert "Invalid JSON syntax" in err

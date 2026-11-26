@@ -7,6 +7,7 @@ import { EventTimeline } from './components/EventTimeline';
 import { ArtifactsView } from './components/ArtifactsView';
 import { CodeView } from './components/CodeView';
 import { TestsView } from './components/TestsView';
+import { TraceabilityView } from './components/TraceabilityView';
 import { ApprovalModal } from './components/ApprovalModal';
 import {
   RunState,
@@ -35,10 +36,11 @@ import {
   FileText,
   Code2,
   ShieldCheck,
+  FileCheck,
   Download,
 } from 'lucide-react';
 
-export type SubTab = 'overview' | 'artifacts' | 'code' | 'tests';
+export type SubTab = 'overview' | 'artifacts' | 'code' | 'tests' | 'traceability';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<'launch' | 'run' | 'history'>('launch');
@@ -328,6 +330,18 @@ export const App: React.FC = () => {
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Acceptance Tests</span>
               </button>
+
+              <button
+                onClick={() => setActiveTab('traceability')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'traceability'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>Traceability Matrix</span>
+              </button>
             </div>
 
             {/* Tab Panes */}
@@ -356,6 +370,10 @@ export const App: React.FC = () => {
                 testEvents={testEvents}
                 debugIteration={debugIteration}
               />
+            )}
+
+            {activeTab === 'traceability' && (
+              <TraceabilityView runId={runState.run_id} />
             )}
           </div>
         )}

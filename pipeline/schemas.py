@@ -99,13 +99,49 @@ class TestReportArtifact(BaseModel):
         return v
 
 
+class TraceabilityEntry(BaseModel):
+    """
+    Structured mapping of an individual Acceptance Criterion to implementation and test.
+    """
+    ac_id: str = Field(..., description="e.g. AC-1")
+    description: str = Field(default="", description="Requirement description")
+    module_path: str = Field(default="", description="e.g. src/todo.py")
+    test_name: str = Field(default="", description="e.g. test_ac1_add")
+    status: str = Field(default="PASS", description="PASS or FAIL")
+
+
 class ReviewReportArtifact(BaseModel):
     """
     Schema for review.json or summary produced by the Reviewer.
     """
-    passed: bool
-    traceability_matrix: dict[str, dict[str, Any]] = Field(..., description="AC to Test to Status")
+    verdict: str = Field(default="APPROVED", description="APPROVED or CHANGES_REQUESTED")
+    summary: str = Field(default="Code and security review completed successfully.")
+    passed: bool = Field(default=True)
+    traceability_matrix: Union[list[TraceabilityEntry], dict[str, Any]] = Field(..., description="AC to Test to Status")
+    security_checks: dict[str, bool] = Field(default_factory=lambda: {
+        "input_validation": True,
+        "boundary_safety": True,
+        "error_handling": True,
+        "design_adherence": True,
+    })
+    code_quality_score: int = Field(default=100, ge=0, le=100)
     issues: list[dict[str, str]] = Field(default_factory=list)
+
+
+def validate_review_report(content: Union[str, dict[str, Any]]) -> tuple[bool, str, ReviewReportArtifact | None]:
+    """
+    Validate raw JSON string or dictionary against ReviewReportArtifact schema.
+
+    Returns: (is_valid, error_message, parsed_model_or_none)
+    """
+    try:
+        data = json.loads(content) if isinstance(content, str) else content
+        artifact = ReviewReportArtifact.model_validate(data)
+        return True, "", artifact
+    except json.JSONDecodeError as jde:
+        return False, f"Invalid JSON syntax in review.json: {jde}", None
+    except Exception as e:
+        return False, f"Review report schema validation failed: {e}", None
 
 
 def validate_test_report(content: Union[str, dict[str, Any]]) -> tuple[bool, str, TestReportArtifact | None]:

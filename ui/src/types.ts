@@ -217,3 +217,21 @@ export interface TestReportData {
   errors: number;
   tests: TestCaseResult[];
 }
+
+export interface TraceabilityEntry {
+  ac_id: string;
+  description: string;
+  module_path: string;
+  test_name: string;
+  status: string;
+}
+
+export interface ReviewReportData {
+  verdict: string;
+  summary: string;
+  passed: boolean;
+  traceability_matrix: TraceabilityEntry[];
+  security_checks?: Record<string, boolean>;
+  code_quality_score?: number;
+  issues?: Array<{ title?: string; description?: string; severity?: string }>;
+}
