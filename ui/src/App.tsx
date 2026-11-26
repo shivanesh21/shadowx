@@ -4,6 +4,9 @@ import { LaunchScreen } from './components/LaunchScreen';
 import { PipelineGraph } from './components/PipelineGraph';
 import { AgentPanel } from './components/AgentPanel';
 import { EventTimeline } from './components/EventTimeline';
+import { ArtifactsView } from './components/ArtifactsView';
+import { CodeView } from './components/CodeView';
+import { TestsView } from './components/TestsView';
 import { ApprovalModal } from './components/ApprovalModal';
 import {
   RunState,
@@ -11,6 +14,8 @@ import {
   AgentMessageEvent,
   ToolCallEvent,
   ToolResultEvent,
+  FileChangedEvent,
+  TestResultDataEvent,
   ApprovalRequestedEvent,
   StartRunParams,
   StageName,
@@ -21,15 +26,29 @@ import {
   resolveApproval,
   fetchRun,
   subscribeToEvents,
+  getZipDownloadUrl,
 } from './api/client';
-import { Octagon, Play } from 'lucide-react';
+import {
+  Octagon,
+  Play,
+  Activity,
+  FileText,
+  Code2,
+  ShieldCheck,
+  Download,
+} from 'lucide-react';
+
+export type SubTab = 'overview' | 'artifacts' | 'code' | 'tests';
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<'launch' | 'run' | 'history'>('launch');
+  const [activeTab, setActiveTab] = useState<SubTab>('overview');
   const [runState, setRunState] = useState<RunState | null>(null);
   const [events, setEvents] = useState<FactoryEvent[]>([]);
   const [agentMessages, setAgentMessages] = useState<AgentMessageEvent[]>([]);
   const [tools, setTools] = useState<Array<{ call: ToolCallEvent; result?: ToolResultEvent }>>([]);
+  const [diffEvents, setDiffEvents] = useState<FileChangedEvent[]>([]);
+  const [testEvents, setTestEvents] = useState<TestResultDataEvent[]>([]);
   const [pendingApproval, setPendingApproval] = useState<ApprovalRequestedEvent | null>(null);
   const [currentRole, setCurrentRole] = useState<string>('Analyst');
   const [debugIteration, setDebugIteration] = useState<number>(0);
@@ -66,9 +85,12 @@ export const App: React.FC = () => {
     setEvents([]);
     setAgentMessages([]);
     setTools([]);
+    setDiffEvents([]);
+    setTestEvents([]);
     setPendingApproval(null);
     setElapsedSeconds(0);
     setDebugIteration(0);
+    setActiveTab('overview');
 
     try {
       const res = await startRun(params);
@@ -126,6 +148,10 @@ export const App: React.FC = () => {
               const updated = { ...last, result: event };
               return [...prev.slice(0, prev.length - 1), updated];
             });
+          } else if (event.event_type === 'file_changed') {
+            setDiffEvents((prev) => [...prev, event]);
+          } else if (event.event_type === 'test_result') {
+            setTestEvents((prev) => [...prev, event]);
           } else if (event.event_type === 'llm_call') {
             if (event.total_tokens) {
               setRunState((prev) =>
@@ -203,7 +229,7 @@ export const App: React.FC = () => {
 
         {activeView === 'run' && runState && (
           <div className="space-y-6">
-            {/* Run overview bar */}
+            {/* Run Overview Bar */}
             <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 flex items-center justify-between flex-wrap gap-4">
               <div>
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block mb-0.5">
@@ -215,6 +241,15 @@ export const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
+                <a
+                  href={getZipDownloadUrl(runState.run_id)}
+                  download
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Download ZIP</span>
+                </a>
+
                 {runState.status === 'running' && (
                   <button
                     onClick={handleCancelRun}
@@ -236,7 +271,7 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Pipeline graph */}
+            {/* Pipeline Graph (Always pinned at top of Run View) */}
             <PipelineGraph
               currentStage={runState.current_stage as StageName}
               status={runState.status}
@@ -244,15 +279,84 @@ export const App: React.FC = () => {
               maxIterations={4}
             />
 
-            {/* Split Agent Panel + Event Timeline */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <AgentPanel
-                currentRole={currentRole}
-                messages={agentMessages}
-                tools={tools}
-              />
-              <EventTimeline events={events} />
+            {/* Sub-tab Navigation */}
+            <div className="flex items-center gap-2 border-b border-gray-800 pb-2">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'overview'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Overview & Stream</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('artifacts')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'artifacts'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Rendered Artifacts</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('code')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'code'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+              >
+                <Code2 className="w-3.5 h-3.5" />
+                <span>Code & Diffs</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('tests')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  activeTab === 'tests'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Acceptance Tests</span>
+              </button>
             </div>
+
+            {/* Tab Panes */}
+            {activeTab === 'overview' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <AgentPanel
+                  currentRole={currentRole}
+                  messages={agentMessages}
+                  tools={tools}
+                />
+                <EventTimeline events={events} />
+              </div>
+            )}
+
+            {activeTab === 'artifacts' && (
+              <ArtifactsView runId={runState.run_id} />
+            )}
+
+            {activeTab === 'code' && (
+              <CodeView runId={runState.run_id} diffEvents={diffEvents} />
+            )}
+
+            {activeTab === 'tests' && (
+              <TestsView
+                runId={runState.run_id}
+                testEvents={testEvents}
+                debugIteration={debugIteration}
+              />
+            )}
           </div>
         )}
       </main>

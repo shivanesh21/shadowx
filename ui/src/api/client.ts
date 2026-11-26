@@ -49,6 +49,28 @@ export async function resolveApproval(
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 }
 
+export async function fetchFiles(runId: string): Promise<string[]> {
+  const resp = await fetch(`${API_BASE}/runs/${runId}/files`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchFileContent(runId: string, filePath: string): Promise<{ content: string; size_bytes: number }> {
+  const resp = await fetch(`${API_BASE}/runs/${runId}/files/${encodeURIComponent(filePath).replace(/%2F/g, '/')}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchArtifacts(runId: string): Promise<{ run_id: string; artifacts: Record<string, { path: string; exists: boolean; size_bytes: number }> }> {
+  const resp = await fetch(`${API_BASE}/runs/${runId}/artifacts`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export function getZipDownloadUrl(runId: string): string {
+  return `${API_BASE}/runs/${runId}/zip`;
+}
+
 /**
  * Connect to the SSE endpoint for a given run and stream events back via callback.
  */

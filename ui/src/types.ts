@@ -183,3 +183,37 @@ export interface StartRunParams {
   use_fake?: boolean;
   run_id?: string;
 }
+
+export interface ArtifactInfo {
+  path: string;
+  exists: boolean;
+  size_bytes: number;
+}
+
+export interface ArtifactsResponse {
+  run_id: string;
+  artifacts: Record<string, ArtifactInfo>;
+}
+
+export interface FileContentResponse {
+  run_id: string;
+  path: string;
+  size_bytes: number;
+  content: string;
+}
+
+export interface TestCaseResult {
+  name: string;
+  ac_id: string;
+  status: 'passed' | 'failed' | 'error';
+  duration_s?: number;
+  failure_message?: string;
+}
+
+export interface TestReportData {
+  total: number;
+  passed: number;
+  failed: number;
+  errors: number;
+  tests: TestCaseResult[];
+}
