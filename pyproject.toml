@@ -20,5 +20,9 @@ shadowx = "shadow.cli:main"
 shadow = "shadow.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["shadow*"]
+where = ["backend"]
+include = ["shadow*", "pipeline*", "backend*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]

@@ -12,8 +12,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-# Database file lives next to the runs/ directory.
-DB_PATH = Path("shadowx_factory.db")
+# Database file lives next to the runs/ directory in backend/.
+DB_PATH = Path(__file__).parent / "shadowx_factory.db"
 
 
 def _connect() -> sqlite3.Connection:

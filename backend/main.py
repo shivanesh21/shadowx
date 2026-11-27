@@ -367,6 +367,8 @@ def compare_metrics() -> dict:
 # Static frontend mount
 # ---------------------------------------------------------------------------
 
-STATIC_DIR = Path("static")
+STATIC_DIR = Path(__file__).parent / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = Path("static")
 if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

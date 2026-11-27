@@ -35,7 +35,7 @@ _approval_events: dict[str, tuple[threading.Event, dict]] = {}
 _cancel_flags: dict[str, threading.Event] = {}
 
 # Directory where run workspaces live
-RUNS_DIR = Path("runs")
+RUNS_DIR = Path(__file__).parent / "runs"
 
 
 def _build_approval_handler(run_id: str):

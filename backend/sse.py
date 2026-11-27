@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import AsyncIterator
 
-RUNS_DIR = Path("runs")
+RUNS_DIR = Path(__file__).parent / "runs"
 TERMINAL_STATUSES = {"done", "failed", "cancelled"}
 POLL_INTERVAL = 0.3   # seconds between file-tail checks
 MAX_TAIL_WAIT = 300   # seconds before giving up on a stalled run

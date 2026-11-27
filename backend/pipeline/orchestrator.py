@@ -327,8 +327,16 @@ class Orchestrator:
         return decision, feedback
 
     def _load_prompt(self, role: str) -> str:
-        """Load role system prompt from shadow/agents/prompts/<role>.md."""
-        prompt_path = Path("shadow") / "agents" / "prompts" / f"{role.lower()}.md"
+        """Load role system prompt anchored to this file's location, not CWD.
+
+        Why: When the backend is launched from the project root, CWD is shadowx/
+        but the prompts live at backend/shadow/agents/prompts/. Using __file__
+        makes the path resolution CWD-independent.
+        """
+        # orchestrator.py is at backend/pipeline/orchestrator.py
+        # prompts are at   backend/shadow/agents/prompts/<role>.md
+        _here = Path(__file__).parent          # backend/pipeline/
+        prompt_path = _here.parent / "shadow" / "agents" / "prompts" / f"{role.lower()}.md"
         if prompt_path.exists():
             return prompt_path.read_text(encoding="utf-8")
         raise FileNotFoundError(f"Role prompt not found at {prompt_path}")
