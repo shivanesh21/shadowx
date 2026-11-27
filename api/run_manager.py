@@ -96,6 +96,7 @@ def _sync_to_db(run_id: str, idea: str, start_time: float) -> None:
         updated_at=time.time(),
         duration_seconds=time.time() - start_time,
         total_tokens=state.get("tokens", 0),
+        cost_usd=round(state.get("cost_usd", 0.0), 6),
         debug_iterations=0,
         tests_passed=tests_passed,
         total_tests=total_tests,

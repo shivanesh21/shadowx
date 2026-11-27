@@ -102,6 +102,7 @@ export const App: React.FC = () => {
         current_stage: 'ANALYSIS',
         status: 'running',
         tokens: 0,
+        cost_usd: 0,
         created_at: Date.now() / 1000,
         updated_at: Date.now() / 1000,
       };
@@ -136,6 +137,7 @@ export const App: React.FC = () => {
                     ...prev,
                     status: event.status.toLowerCase() as any,
                     tokens: event.total_tokens || prev.tokens,
+                    cost_usd: event.total_cost_usd !== undefined ? event.total_cost_usd : prev.cost_usd,
                   }
                 : null
             );
@@ -155,11 +157,15 @@ export const App: React.FC = () => {
           } else if (event.event_type === 'test_result') {
             setTestEvents((prev) => [...prev, event]);
           } else if (event.event_type === 'llm_call') {
-            if (event.total_tokens) {
-              setRunState((prev) =>
-                prev ? { ...prev, tokens: prev.tokens + (event.total_tokens || 0) } : null
-              );
-            }
+            setRunState((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    tokens: prev.tokens + (event.total_tokens || 0),
+                    cost_usd: (prev.cost_usd || 0) + (event.cost_usd || 0),
+                  }
+                : null
+            );
           } else if (event.event_type === 'approval_requested') {
             setPendingApproval(event);
           } else if (event.event_type === 'approval_resolved') {

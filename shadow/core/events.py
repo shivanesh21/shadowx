@@ -45,6 +45,7 @@ class LLMCallEvent(Event):
     completion_tokens: int = 0
     total_tokens: int = 0
     latency_ms: float = 0.0
+    cost_usd: float = 0.0
     event_type: str = "llm_call"
 
 
@@ -134,6 +135,7 @@ class RunFinished(Event):
     status: str = "success"  # success | failed | cancelled
     duration_s: float = 0.0
     total_tokens: int = 0
+    total_cost_usd: float = 0.0
     event_type: str = "run_finished"
 
 

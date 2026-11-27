@@ -66,8 +66,16 @@ class AgentResult:
     artifacts: dict[str, str] = field(default_factory=dict)
     steps_taken: int = 0
     total_tokens: int = 0
+    total_cost_usd: float = 0.0
     history: list[dict[str, Any]] = field(default_factory=list)
     finished_via_tool: bool = False
+
+
+def estimate_tokens(text: str) -> int:
+    """Fast conservative heuristic: ~4 characters per token."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
 
 
 class Agent:
@@ -97,6 +105,61 @@ class Agent:
         self.finish_summary: str = ""
         self.finish_artifacts: dict[str, str] = {}
         self.total_tokens: int = 0
+        self.total_cost_usd: float = 0.0
+
+    def _trim_context(self, live_contents: list[Any], history: list[dict[str, Any]]) -> None:
+        """
+        Trim and summarize older tool outputs when approaching spec.token_budget.
+        CRITICAL: Never touches model turns to ensure native Gemini thought_signature
+        and candidate parts remain intact and valid.
+        """
+        total_estimated = 0
+        for item in history:
+            parts = item.get("parts", [])
+            for p in parts:
+                if "text" in p:
+                    total_estimated += estimate_tokens(p["text"])
+                elif "function_response" in p:
+                    resp_val = str(p["function_response"].get("response", ""))
+                    total_estimated += estimate_tokens(resp_val)
+
+        budget_threshold = int(self.spec.token_budget * 0.85)
+        if total_estimated <= budget_threshold:
+            return
+
+        # Iterate through history items to trim long tool outputs
+        for h_idx, h_item in enumerate(history):
+            if not isinstance(h_item, dict) or h_item.get("role") != "user":
+                continue
+
+            for part in h_item.get("parts", []):
+                if isinstance(part, dict) and "function_response" in part:
+                    resp = part["function_response"].get("response")
+                    resp_str = str(resp) if resp is not None else ""
+                    if len(resp_str) > 1000:
+                        trimmed_str = (
+                            f"[Output trimmed: {len(resp_str)} chars]\n"
+                            f"Head: {resp_str[:400]}\n... [SNIP] ...\nTail: {resp_str[-400:]}"
+                        )
+                        part["function_response"]["response"] = trimmed_str
+
+                        # Also sync in live_contents if matching index exists
+                        if h_idx < len(live_contents):
+                            lc_item = live_contents[h_idx]
+                            try:
+                                if hasattr(lc_item, "parts"):
+                                    for lc_part in lc_item.parts:
+                                        if hasattr(lc_part, "function_response") and lc_part.function_response:
+                                            lc_part.function_response.response = {"result": trimmed_str}
+                                elif isinstance(lc_item, dict):
+                                    for lc_part in lc_item.get("parts", []):
+                                        if isinstance(lc_part, dict):
+                                            if "function_response" in lc_part:
+                                                lc_part["function_response"]["response"] = {"result": trimmed_str}
+                                            elif "response" in lc_part:
+                                                lc_part["response"] = trimmed_str
+                            except Exception:
+                                pass
 
     def _build_tools_for_role(self) -> tuple[list[dict[str, Any]], dict[str, Callable[..., Any]]]:
         """Filter available tools to only those allowed by the AgentSpec."""
@@ -169,6 +232,7 @@ class Agent:
         self.is_finished = False
         self.finish_summary = ""
         self.finish_artifacts = {}
+        self.total_cost_usd = 0.0
 
         # Context setup
         user_prompt = task
@@ -218,6 +282,9 @@ class Agent:
         while steps_taken < self.spec.max_steps and not self.is_finished:
             steps_taken += 1
 
+            # 0. Context management: trim old tool outputs if approaching budget
+            self._trim_context(live_contents, history)
+
             # 1. Generate response from LLM
             llm_response: LLMResponse = self.llm.generate(
                 contents=live_contents,
@@ -228,6 +295,7 @@ class Agent:
             )
 
             self.total_tokens += llm_response.token_usage.total_tokens
+            self.total_cost_usd += llm_response.cost_usd
             self.event_bus.emit(
                 LLMCallEvent(
                     run_id=self.run_id,
@@ -236,6 +304,7 @@ class Agent:
                     completion_tokens=llm_response.token_usage.completion_tokens,
                     total_tokens=llm_response.token_usage.total_tokens,
                     latency_ms=llm_response.latency_ms,
+                    cost_usd=llm_response.cost_usd,
                 )
             )
 
@@ -368,6 +437,7 @@ class Agent:
             artifacts=self.finish_artifacts,
             steps_taken=steps_taken,
             total_tokens=self.total_tokens,
+            total_cost_usd=round(self.total_cost_usd, 6),
             history=history,
             finished_via_tool=self.is_finished,
         )

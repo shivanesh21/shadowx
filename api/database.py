@@ -24,7 +24,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create the runs table if it doesn't exist yet."""
+    """Create the runs table if it doesn't exist yet, and ensure schema migrations."""
     with _connect() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS runs (
@@ -36,12 +36,18 @@ def init_db() -> None:
                 updated_at       REAL NOT NULL,
                 duration_seconds REAL DEFAULT 0.0,
                 total_tokens     INTEGER DEFAULT 0,
+                cost_usd         REAL DEFAULT 0.0,
                 debug_iterations INTEGER DEFAULT 0,
                 tests_passed     INTEGER DEFAULT 0,
                 total_tests      INTEGER DEFAULT 0,
                 error            TEXT
             )
         """)
+        # Schema migration: ensure cost_usd column exists if table pre-dates it
+        cursor = conn.execute("PRAGMA table_info(runs)")
+        cols = {row["name"] for row in cursor.fetchall()}
+        if "cost_usd" not in cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN cost_usd REAL DEFAULT 0.0")
         conn.commit()
 
 
@@ -54,6 +60,7 @@ def upsert_run(
     updated_at: float,
     duration_seconds: float = 0.0,
     total_tokens: int = 0,
+    cost_usd: float = 0.0,
     debug_iterations: int = 0,
     tests_passed: int = 0,
     total_tests: int = 0,
@@ -65,15 +72,16 @@ def upsert_run(
             INSERT INTO runs (
                 run_id, idea, status, current_stage,
                 created_at, updated_at, duration_seconds,
-                total_tokens, debug_iterations,
+                total_tokens, cost_usd, debug_iterations,
                 tests_passed, total_tests, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id) DO UPDATE SET
                 status           = excluded.status,
                 current_stage    = excluded.current_stage,
                 updated_at       = excluded.updated_at,
                 duration_seconds = excluded.duration_seconds,
                 total_tokens     = excluded.total_tokens,
+                cost_usd         = excluded.cost_usd,
                 debug_iterations = excluded.debug_iterations,
                 tests_passed     = excluded.tests_passed,
                 total_tests      = excluded.total_tests,
@@ -81,7 +89,7 @@ def upsert_run(
         """, (
             run_id, idea, status, current_stage,
             created_at, updated_at, duration_seconds,
-            total_tokens, debug_iterations,
+            total_tokens, cost_usd, debug_iterations,
             tests_passed, total_tests, error,
         ))
         conn.commit()

@@ -139,7 +139,10 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
       case 'llm_call':
         return (
           <span>
-            LLM call: {ev.total_tokens || 0} tokens ({ev.latency_ms || 0}ms)
+            LLM call <span className="text-indigo-400 font-mono text-xs">({ev.model || 'model'})</span>: {ev.total_tokens || 0} tokens ({ev.latency_ms || 0}ms)
+            {ev.cost_usd !== undefined && ev.cost_usd > 0 && (
+              <span className="text-emerald-400 ml-1 font-mono text-xs">(${ev.cost_usd.toFixed(4)})</span>
+            )}
           </span>
         );
       case 'error':

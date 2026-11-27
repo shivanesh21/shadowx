@@ -114,6 +114,7 @@ class RunContext:
                 "updated_at": time.time(),
                 "status": "pending",
                 "tokens": 0,
+                "cost_usd": 0.0,
                 "artifacts": {},
                 "checkpoints": {},
                 "idea": "",
@@ -166,6 +167,15 @@ class RunContext:
     def get_tokens(self) -> int:
         state = self._read_state()
         return state.get("tokens", 0)
+
+    def add_cost(self, cost: float) -> None:
+        state = self._read_state()
+        state["cost_usd"] = round(state.get("cost_usd", 0.0) + cost, 6)
+        self._write_state(state)
+
+    def get_cost(self) -> float:
+        state = self._read_state()
+        return state.get("cost_usd", 0.0)
 
     def set_idea(self, idea: str) -> None:
         state = self._read_state()
@@ -291,6 +301,24 @@ class Orchestrator:
             return prompt_path.read_text(encoding="utf-8")
         raise FileNotFoundError(f"Role prompt not found at {prompt_path}")
 
+    def get_model_for_role(self, role: str) -> Optional[str]:
+        """
+        Configure per-agent model tier:
+          - Stronger tier (Architect, Debugger): gemini-2.5-pro or PRO_MODEL env
+          - Cheaper tier (Documenter): gemini-2.5-flash-lite or DOCS_MODEL / LITE_MODEL env
+          - Balanced tier (Analyst, Developer, Tester, Reviewer): gemini-2.5-flash or DEFAULT_MODEL env
+        """
+        from shadow.core.llm import FakeLLMProvider
+        if isinstance(self.llm, FakeLLMProvider):
+            return None
+
+        role_l = role.lower()
+        if role_l in ("architect", "debugger"):
+            return os.environ.get("PRO_MODEL", os.environ.get(f"{role.upper()}_MODEL", "gemini-2.5-pro"))
+        elif role_l in ("documenter", "docs"):
+            return os.environ.get("LITE_MODEL", os.environ.get("DOCS_MODEL", "gemini-2.5-flash-lite"))
+        return os.environ.get("DEFAULT_MODEL", os.environ.get(f"{role.upper()}_MODEL", "gemini-2.5-flash"))
+
     # -----------------------------------------------------------------------
     # Stage 1: ANALYSIS
     # -----------------------------------------------------------------------
@@ -319,6 +347,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Analyst"),
             require_finish_tool=True,
         )
 
@@ -338,6 +367,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             md_path = self.context.workspace_dir / "docs" / "requirements.md"
@@ -431,6 +461,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Architect"),
             require_finish_tool=True,
         )
 
@@ -464,6 +495,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             design_md_path = self.context.workspace_dir / "docs" / "design.md"
@@ -557,6 +589,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Developer"),
             require_finish_tool=True,
         )
 
@@ -589,6 +622,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             src_dir = self.context.workspace_dir / "src"
@@ -666,6 +700,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Tester"),
             require_finish_tool=True,
         )
 
@@ -700,6 +735,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             report_file = self.context.workspace_dir / "test_report.json"
@@ -770,6 +806,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Debugger"),
             require_finish_tool=True,
         )
 
@@ -830,6 +867,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Developer"),
             require_finish_tool=True,
         )
 
@@ -932,6 +970,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Reviewer"),
             require_finish_tool=True,
         )
 
@@ -955,6 +994,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             review_path = self.context.workspace_dir / "docs" / "review.md"
@@ -1069,6 +1109,7 @@ class Orchestrator:
             system_prompt=system_prompt,
             allowed_tools=list(tools.keys()),
             max_steps=self.budget.max_steps_per_stage,
+            model_override=self.get_model_for_role("Documenter"),
             require_finish_tool=True,
         )
 
@@ -1094,6 +1135,7 @@ class Orchestrator:
         for attempt in range(max_retries + 1):
             result = agent.execute(task=task_prompt, initial_history=current_history)
             self.context.add_tokens(result.total_tokens)
+            self.context.add_cost(result.total_cost_usd)
             current_history = result.history
 
             readme_path = self.context.workspace_dir / "README.md"
@@ -1156,16 +1198,37 @@ class Orchestrator:
                 success = stage_fn()
                 if not success:
                     self.context.update_stage(Stage.FAILED)
-                    self.event_bus.emit(RunFinished(run_id=self.run_id, status="failed"))
+                    self.event_bus.emit(
+                        RunFinished(
+                            run_id=self.run_id,
+                            status="failed",
+                            total_tokens=self.context.get_tokens(),
+                            total_cost_usd=self.context.get_cost(),
+                        )
+                    )
                     return False
 
                 if target_stage == stage_enum:
                     self.context.update_stage(Stage.DONE)
-                    self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
+                    self.event_bus.emit(
+                        RunFinished(
+                            run_id=self.run_id,
+                            status="success",
+                            total_tokens=self.context.get_tokens(),
+                            total_cost_usd=self.context.get_cost(),
+                        )
+                    )
                     return True
 
             self.context.update_stage(Stage.DONE)
-            self.event_bus.emit(RunFinished(run_id=self.run_id, status="success"))
+            self.event_bus.emit(
+                RunFinished(
+                    run_id=self.run_id,
+                    status="success",
+                    total_tokens=self.context.get_tokens(),
+                    total_cost_usd=self.context.get_cost(),
+                )
+            )
             return True
 
         except KeyboardInterrupt:

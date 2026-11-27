@@ -131,6 +131,9 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="hidden sm:flex items-center gap-1 bg-gray-900 border border-gray-800 px-2.5 py-1 rounded-md font-mono">
                 <Zap className="w-3.5 h-3.5 text-indigo-400" />
                 <span>{runState.tokens.toLocaleString()} tok</span>
+                {runState.cost_usd !== undefined && runState.cost_usd > 0 && (
+                  <span className="text-emerald-400 ml-1">(${runState.cost_usd.toFixed(4)})</span>
+                )}
               </div>
 
               <span className="hidden lg:inline text-[11px] font-mono text-gray-500">

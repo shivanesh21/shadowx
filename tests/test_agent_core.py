@@ -107,3 +107,97 @@ def test_agent_finish_tool():
     assert result.summary == "Completed requirements definition"
     assert result.artifacts == {"requirements": "docs/requirements.md"}
     assert result.steps_taken == 1
+
+
+def test_estimate_tokens():
+    from shadow.core.agent import estimate_tokens
+    assert estimate_tokens("") == 0
+    assert estimate_tokens("hello world") >= 2
+    # 400 characters is ~100 tokens
+    assert 90 <= estimate_tokens("a" * 400) <= 110
+
+
+def test_context_trimming_preserves_thought_signatures():
+    from shadow.core.agent import Agent, AgentSpec
+
+    spec = AgentSpec(name="TestTrimmer", system_prompt="System", token_budget=1000)
+    agent = Agent(spec=spec, llm=FakeLLMProvider(), tool_registry={}, tool_declarations=[])
+
+    # Giant output to simulate huge tool result exceeding budget threshold
+    huge_output = "Line " + ("X" * 100 + "\n") * 60  # > 6000 chars
+
+    # Dummy native-like object to verify model turns aren't touched
+    class MockModelTurn:
+        thought_signature = b"valid_gemini_thought_sig"
+        text = "Thinking..."
+
+    model_turn = MockModelTurn()
+
+    live_contents = [
+        {"role": "user", "parts": [{"text": "Do task"}]},
+        {"role": "model", "parts": [model_turn]},
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "function_response": {
+                        "name": "run_command",
+                        "response": {"result": huge_output},
+                    }
+                }
+            ],
+        },
+    ]
+
+    history = [
+        {"role": "user", "parts": [{"text": "Do task"}]},
+        {"role": "model", "thought": "Thinking...", "parts": []},
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "function_response": {
+                        "name": "run_command",
+                        "response": huge_output,
+                    }
+                }
+            ],
+        },
+    ]
+
+    agent._trim_context(live_contents, history)
+
+    # 1. Model turn must remain completely intact (object identity & thought_signature untouched)
+    assert live_contents[1]["parts"][0] is model_turn
+    assert live_contents[1]["parts"][0].thought_signature == b"valid_gemini_thought_sig"
+
+    # 2. Tool response in live_contents must be trimmed
+    trimmed_result = live_contents[2]["parts"][0]["function_response"]["response"]["result"]
+    assert "[Output trimmed" in trimmed_result
+    assert len(trimmed_result) < len(huge_output)
+
+    # 3. History entry must also be trimmed
+    trimmed_hist = history[2]["parts"][0]["function_response"]["response"]
+    assert "[Output trimmed" in trimmed_hist
+    assert len(trimmed_hist) < len(huge_output)
+
+
+def test_agent_accumulates_cost():
+    from shadow.core.llm import TokenUsage
+
+    provider = FakeLLMProvider()
+    provider.queue_response(LLMResponse(
+        text="Step 1 completed",
+        token_usage=TokenUsage(prompt_tokens=2000, completion_tokens=500, total_tokens=2500),
+    ))
+    provider.queue_response(LLMResponse(
+        text="Final answer",
+        token_usage=TokenUsage(prompt_tokens=2500, completion_tokens=200, total_tokens=2700),
+    ))
+
+    spec = AgentSpec(name="CostAgent", system_prompt="Track cost", allowed_tools=[])
+    agent = Agent(spec=spec, llm=provider, tool_registry={}, tool_declarations=[])
+    result = agent.execute("Compute something")
+
+    assert result.total_cost_usd > 0
+    assert abs(result.total_cost_usd - (agent.total_cost_usd)) < 1e-9

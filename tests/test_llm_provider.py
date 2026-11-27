@@ -40,3 +40,35 @@ def test_fake_llm_provider_simulated_exception():
 
     with pytest.raises(RuntimeError, match="Simulated LLM rate limit"):
         provider.generate(contents=[])
+
+
+def test_calculate_cost():
+    from shadow.core.llm import calculate_cost
+
+    # gemini-2.5-pro: $1.25 / 1M prompt, $5.00 / 1M completion
+    cost_pro = calculate_cost("gemini-2.5-pro", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+    assert abs(cost_pro - 6.25) < 1e-5
+
+    # gemini-2.5-flash: $0.15 / 1M prompt, $0.60 / 1M completion
+    cost_flash = calculate_cost("gemini-2.5-flash", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+    assert abs(cost_flash - 0.75) < 1e-5
+
+    # gemini-2.5-flash-lite: $0.075 / 1M prompt, $0.30 / 1M completion
+    cost_lite = calculate_cost("gemini-2.5-flash-lite", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+    assert abs(cost_lite - 0.375) < 1e-5
+
+    # Fallback default pricing
+    cost_unknown = calculate_cost("custom-model-x", prompt_tokens=1000, completion_tokens=1000)
+    assert cost_unknown > 0
+
+
+def test_fake_llm_provider_computes_cost():
+    provider = FakeLLMProvider()
+    provider.queue_response(LLMResponse(
+        text="Analysis done",
+        token_usage=TokenUsage(prompt_tokens=1000, completion_tokens=500, total_tokens=1500),
+    ))
+    resp = provider.generate(contents=[], model="gemini-2.5-flash")
+    assert resp.cost_usd > 0
+    # 1000 * 0.15/1M + 500 * 0.60/1M = 0.00015 + 0.00030 = 0.00045
+    assert abs(resp.cost_usd - 0.00045) < 1e-6

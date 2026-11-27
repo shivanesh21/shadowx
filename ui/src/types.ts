@@ -32,6 +32,7 @@ export interface RunState {
   current_stage: StageName;
   status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
   tokens: number;
+  cost_usd?: number;
   created_at: number;
   updated_at: number;
   artifacts?: Record<string, string>;
@@ -88,6 +89,7 @@ export interface RunFinishedEvent extends BaseEvent {
   event_type: 'run_finished';
   status: string;
   total_tokens?: number;
+  total_cost_usd?: number;
 }
 
 export interface LLMCallEvent extends BaseEvent {
@@ -96,6 +98,7 @@ export interface LLMCallEvent extends BaseEvent {
   prompt_tokens?: number;
   response_tokens?: number;
   total_tokens?: number;
+  cost_usd?: number;
   latency_ms?: number;
 }
 

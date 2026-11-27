@@ -653,3 +653,29 @@ def test_agent_repetitive_tool_call_guard():
     # 3rd call was intercepted and blocked before executing the tool function
     assert tool_called_count == 2
 
+
+def test_get_model_for_role(tmp_path: Path):
+    from shadow.core.llm import GeminiProvider
+    # When using real provider or specifying GeminiProvider
+    orch = Orchestrator(idea="Test models", base_dir=tmp_path, llm=GeminiProvider(api_key="mock_key"))
+
+    assert orch.get_model_for_role("Architect") == "gemini-2.5-pro"
+    assert orch.get_model_for_role("Debugger") == "gemini-2.5-pro"
+    assert orch.get_model_for_role("Documenter") == "gemini-2.5-flash-lite"
+    assert orch.get_model_for_role("Analyst") == "gemini-2.5-flash"
+    assert orch.get_model_for_role("Developer") == "gemini-2.5-flash"
+    assert orch.get_model_for_role("Tester") == "gemini-2.5-flash"
+    assert orch.get_model_for_role("Reviewer") == "gemini-2.5-flash"
+
+
+def test_run_context_cost_tracking(tmp_path: Path):
+    ctx = RunContext(run_id="cost_test_run", base_dir=tmp_path)
+    assert ctx.get_cost() == 0.0
+
+    ctx.add_cost(0.0015)
+    ctx.add_cost(0.0025)
+    assert abs(ctx.get_cost() - 0.004) < 1e-6
+
+    state = ctx._read_state()
+    assert abs(state.get("cost_usd", 0.0) - 0.004) < 1e-6
+

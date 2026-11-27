@@ -329,12 +329,15 @@ def compare_metrics() -> dict:
 
     total_tokens = sum(r.get("total_tokens", 0) for r in rows)
     total_duration = sum(r.get("duration_seconds", 0.0) for r in rows)
+    total_cost = sum(r.get("cost_usd", 0.0) or 0.0 for r in rows)
     done_count = sum(1 for r in rows if r.get("status") == "done")
 
     summary["runs"] = rows
     summary["aggregates"] = {
         "avg_tokens": total_tokens // len(rows) if rows else 0,
         "avg_duration_seconds": round(total_duration / len(rows), 1) if rows else 0,
+        "total_cost_usd": round(total_cost, 4),
+        "avg_cost_usd": round(total_cost / len(rows), 4) if rows else 0.0,
         "success_rate": round(done_count / len(rows), 2) if rows else 0.0,
         "total_done": done_count,
         "total_failed": sum(1 for r in rows if r.get("status") == "failed"),
