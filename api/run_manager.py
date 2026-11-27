@@ -271,6 +271,27 @@ def resolve_approval(run_id: str, decision: str, feedback: str) -> bool:
     return True
 
 
+def rollback_run(run_id: str, stage_name: str) -> bool:
+    """
+    Roll back an existing run workspace to a previously checkpointed stage.
+    """
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists():
+        return False
+
+    from pipeline.orchestrator import RunContext, Stage
+    try:
+        target_stage = Stage(stage_name.upper())
+    except ValueError:
+        return False
+
+    ctx = RunContext(run_id=run_id, base_dir=RUNS_DIR)
+    success = ctx.rollback_to_stage(target_stage)
+    if success:
+        _sync_to_db(run_id, ctx.get_idea(), time.time())
+    return success
+
+
 def reset_state() -> None:
     """
     Reset all module-level globals to their initial state.

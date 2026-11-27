@@ -242,3 +242,13 @@ class TestSSEStream:
 
         full = "\n".join(chunks)
         assert "run_started" in full
+
+
+class TestRollbackRun:
+    def test_rollback_unknown_run_returns_400(self, client):
+        resp = client.post("/runs/nonexistent/rollback", json={"stage": "ANALYSIS"})
+        assert resp.status_code == 400
+
+    def test_rollback_invalid_stage_returns_400(self, client):
+        resp = client.post("/runs/some-id/rollback", json={"stage": "INVALID_STAGE"})
+        assert resp.status_code == 400

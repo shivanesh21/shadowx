@@ -19,17 +19,27 @@ SENSITIVE_ENV_PATTERNS = [
     "SECRET",
     "TOKEN",
     "PASSWORD",
+    "PASSWD",
     "AUTH",
     "CREDENTIAL",
+    "BEARER",
+    "PRIVATE",
 ]
 
 # Explicit keys to never leak
 EXPLICIT_BLOCKED_ENV = {
     "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
     "AWS_SECRET_ACCESS_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SESSION_TOKEN",
     "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "DATABASE_URL",
 }
 
 
@@ -37,17 +47,15 @@ def resolve_workspace_path(path: Union[str, Path], workspace_root: Union[str, Pa
     """
     Safely resolve a path relative to the workspace root.
 
-    Raises PermissionError if the target resolves outside the workspace.
+    Raises PermissionError if the target resolves outside the workspace, contains
+    null bytes, or attempts symlink/junction escape.
     """
+    path_str = str(path)
+    if "\0" in path_str:
+        raise PermissionError("Null byte injection detected in path")
+
     root = Path(workspace_root).resolve()
     raw_path = Path(path)
-
-    # Check for obvious traversal tokens before resolution
-    raw_str = str(path).replace("\\", "/")
-    parts = [p for p in raw_str.split("/") if p]
-    if ".." in parts:
-        # Check if navigating up exceeds root
-        pass
 
     if raw_path.is_absolute():
         resolved = raw_path.resolve()

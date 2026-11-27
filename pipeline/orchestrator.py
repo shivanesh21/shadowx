@@ -47,7 +47,7 @@ from shadow.tools.registry import ToolRegistry
 from shadow.tools.testing import run_tests
 from shadow.agent import build_provider, attach_cli_renderer
 from pipeline.schemas import validate_requirements, validate_design, validate_test_report
-from pipeline.git_checkpoints import init_workspace_git, create_checkpoint
+from pipeline.git_checkpoints import init_workspace_git, create_checkpoint, rollback_to_checkpoint
 
 console = Console()
 
@@ -199,6 +199,34 @@ class RunContext:
             self._write_state(state)
         return commit_hash
 
+    def rollback_to_stage(self, stage: Stage) -> bool:
+        """
+        Roll back the workspace and run state to the checkpoint saved for `stage`.
+        Restores files via git reset --hard, updates state.json stage to `stage`,
+        resets status to 'running', and records the rollback in state history.
+        """
+        checkpoints = self.get_checkpoints()
+        commit_hash = checkpoints.get(stage.value)
+        if not commit_hash:
+            return False
+
+        success = rollback_to_checkpoint(self.workspace_dir, commit_hash)
+        if not success:
+            return False
+
+        state = self._read_state()
+        prev = state.get("current_stage", Stage.IDLE.value)
+        state["current_stage"] = stage.value
+        state["status"] = "running"
+        state.setdefault("history", []).append({
+            "from": prev,
+            "to": stage.value,
+            "timestamp": time.time(),
+            "details": {"action": "rollback", "commit_hash": commit_hash},
+        })
+        self._write_state(state)
+        return True
+
 
 class Orchestrator:
     """
@@ -244,6 +272,10 @@ class Orchestrator:
             return False, f"Stage token budget exceeded ({stage_tokens} > {self.budget.max_stage_tokens})"
 
         return True, ""
+
+    def rollback(self, stage: Stage) -> bool:
+        """Roll back the workspace and run state to a prior completed stage checkpoint."""
+        return self.context.rollback_to_stage(stage)
 
     def _prompt_approval_gate(self, stage: str, artifact_path: str, preview_content: str) -> tuple[str, str]:
         """

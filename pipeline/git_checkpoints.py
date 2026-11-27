@@ -88,3 +88,35 @@ def create_checkpoint(workspace_dir: Path, stage_name: str) -> str:
     except Exception as e:
         logger.warning(f"Git checkpoint failed for stage {stage_name}: {e}")
         return ""
+
+
+def rollback_to_checkpoint(workspace_dir: Path, commit_hash: str) -> bool:
+    """
+    Reset workspace to a specific git commit hash using `git reset --hard <commit_hash>`
+    and `git clean -fd` to remove any untracked files added after the checkpoint.
+    """
+    ws = Path(workspace_dir).resolve()
+    if not (ws / ".git").exists():
+        logger.warning(f"Cannot rollback: {ws} is not a git repository")
+        return False
+
+    try:
+        subprocess.run(
+            ["git", "reset", "--hard", commit_hash],
+            cwd=str(ws),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "clean", "-fd"],
+            cwd=str(ws),
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        logger.info(f"Workspace rolled back to checkpoint {commit_hash}")
+        return True
+    except Exception as e:
+        logger.error(f"Git rollback failed to checkpoint {commit_hash}: {e}")
+        return False

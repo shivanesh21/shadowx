@@ -37,6 +37,7 @@ from api.database import init_db, list_runs, get_run, upsert_run
 from api.run_manager import (
     start_run,
     cancel_run,
+    rollback_run,
     resolve_approval,
     get_run_state,
     get_active_run_id,
@@ -91,6 +92,10 @@ class StartRunRequest(BaseModel):
 class ApproveRequest(BaseModel):
     decision: str = Field(..., description="'approved', 'rejected', or 'edited'")
     feedback: str = Field("", description="Feedback text sent back to the agent (for rejected/edited)")
+
+
+class RollbackRequest(BaseModel):
+    stage: str = Field(..., description="Target stage to rollback to (e.g. 'ANALYSIS', 'DESIGN', 'CODING')")
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +178,18 @@ def approve(run_id: str, body: ApproveRequest) -> dict:
             detail=f"No pending approval gate for run '{run_id}'",
         )
     return {"run_id": run_id, "decision": body.decision, "status": "resolved"}
+
+
+@app.post("/runs/{run_id}/rollback")
+def rollback_stage(run_id: str, body: RollbackRequest) -> dict:
+    """Roll back the run workspace to the checkpoint of a previous stage."""
+    success = rollback_run(run_id, body.stage)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Rollback failed: either run '{run_id}' not found, stage '{body.stage}' invalid, or no checkpoint exists for that stage.",
+        )
+    return {"run_id": run_id, "stage": body.stage.upper(), "status": "rolled_back"}
 
 
 # ---------------------------------------------------------------------------

@@ -195,6 +195,10 @@ def glob_files(
 ) -> str:
     """Find files matching a glob pattern relative to a base directory in the workspace."""
     try:
+        raw_pat = pattern.replace("\\", "/")
+        if ".." in [p for p in raw_pat.split("/") if p]:
+            return f"ERROR: Path traversal detected in glob pattern '{pattern}'"
+
         root = Path(workspace_root).resolve()
         target = resolve_workspace_path(path, workspace_root)
         if not target.exists() or not target.is_dir():
