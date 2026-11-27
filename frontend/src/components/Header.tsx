@@ -1,10 +1,10 @@
 import React from 'react';
-import { Cpu, Play, Clock, Zap, Activity } from 'lucide-react';
-import { RunState } from '../types';
+import { Cpu, Play, Clock, Zap, Activity, History, BarChart2, GitCompare } from 'lucide-react';
+import { RunState, ActiveView } from '../types';
 
 interface HeaderProps {
-  activeView: 'launch' | 'run' | 'history';
-  onNavigate: (view: 'launch' | 'run' | 'history') => void;
+  activeView: ActiveView;
+  onNavigate: (view: ActiveView) => void;
   runState: RunState | null;
   elapsedSeconds: number;
 }
@@ -112,6 +112,42 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <span className="flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5" /> Run View
+              </span>
+            </button>
+            <button
+              onClick={() => onNavigate('history')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activeView === 'history'
+                  ? 'bg-gray-800 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5" /> History
+              </span>
+            </button>
+            <button
+              onClick={() => onNavigate('metrics')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activeView === 'metrics'
+                  ? 'bg-gray-800 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <BarChart2 className="w-3.5 h-3.5" /> Metrics
+              </span>
+            </button>
+            <button
+              onClick={() => onNavigate('compare')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                activeView === 'compare'
+                  ? 'bg-gray-800 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <GitCompare className="w-3.5 h-3.5" /> Compare
               </span>
             </button>
           </nav>

@@ -9,6 +9,9 @@ import { CodeView } from './components/CodeView';
 import { TestsView } from './components/TestsView';
 import { TraceabilityView } from './components/TraceabilityView';
 import { ApprovalModal } from './components/ApprovalModal';
+import { HistoryView } from './components/HistoryView';
+import { MetricsDashboard } from './components/MetricsDashboard';
+import { CompareView } from './components/CompareView';
 import {
   RunState,
   FactoryEvent,
@@ -41,9 +44,10 @@ import {
 } from 'lucide-react';
 
 export type SubTab = 'overview' | 'artifacts' | 'code' | 'tests' | 'traceability';
+export type ActiveView = 'launch' | 'run' | 'history' | 'metrics' | 'compare';
 
 export const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<'launch' | 'run' | 'history'>('launch');
+  const [activeView, setActiveView] = useState<ActiveView>('launch');
   const [activeTab, setActiveTab] = useState<SubTab>('overview');
   const [runState, setRunState] = useState<RunState | null>(null);
   const [events, setEvents] = useState<FactoryEvent[]>([]);
@@ -134,11 +138,11 @@ export const App: React.FC = () => {
             setRunState((prev) =>
               prev
                 ? {
-                    ...prev,
-                    status: event.status.toLowerCase() as any,
-                    tokens: event.total_tokens || prev.tokens,
-                    cost_usd: event.total_cost_usd !== undefined ? event.total_cost_usd : prev.cost_usd,
-                  }
+                  ...prev,
+                  status: event.status.toLowerCase() as any,
+                  tokens: event.total_tokens || prev.tokens,
+                  cost_usd: event.total_cost_usd !== undefined ? event.total_cost_usd : prev.cost_usd,
+                }
                 : null
             );
           } else if (event.event_type === 'agent_message') {
@@ -160,10 +164,10 @@ export const App: React.FC = () => {
             setRunState((prev) =>
               prev
                 ? {
-                    ...prev,
-                    tokens: prev.tokens + (event.total_tokens || 0),
-                    cost_usd: (prev.cost_usd || 0) + (event.cost_usd || 0),
-                  }
+                  ...prev,
+                  tokens: prev.tokens + (event.total_tokens || 0),
+                  cost_usd: (prev.cost_usd || 0) + (event.cost_usd || 0),
+                }
                 : null
             );
           } else if (event.event_type === 'approval_requested') {
@@ -181,7 +185,7 @@ export const App: React.FC = () => {
         },
         () => {
           // Stream completed; refresh state once from API
-          fetchRun(res.run_id).then(setRunState).catch(() => {});
+          fetchRun(res.run_id).then(setRunState).catch(() => { });
         }
       );
     } catch (err: any) {
@@ -291,11 +295,10 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2 border-b border-gray-800 pb-2">
               <button
                 onClick={() => setActiveTab('overview')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'overview'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${activeTab === 'overview'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                     : 'bg-gray-900 text-gray-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <Activity className="w-3.5 h-3.5" />
                 <span>Overview & Stream</span>
@@ -303,11 +306,10 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setActiveTab('artifacts')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'artifacts'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${activeTab === 'artifacts'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                     : 'bg-gray-900 text-gray-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>Rendered Artifacts</span>
@@ -315,11 +317,10 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setActiveTab('code')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'code'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${activeTab === 'code'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                     : 'bg-gray-900 text-gray-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <Code2 className="w-3.5 h-3.5" />
                 <span>Code & Diffs</span>
@@ -327,11 +328,10 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setActiveTab('tests')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'tests'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${activeTab === 'tests'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                     : 'bg-gray-900 text-gray-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Acceptance Tests</span>
@@ -339,11 +339,10 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setActiveTab('traceability')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  activeTab === 'traceability'
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${activeTab === 'traceability'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                     : 'bg-gray-900 text-gray-400 hover:text-white'
-                }`}
+                  }`}
               >
                 <FileCheck className="w-3.5 h-3.5" />
                 <span>Traceability Matrix</span>
@@ -382,6 +381,56 @@ export const App: React.FC = () => {
               <TraceabilityView runId={runState.run_id} />
             )}
           </div>
+        )}
+
+        {activeView === 'run' && !runState && (
+          <div className="rounded-xl border border-dashed border-gray-800 p-12 text-center text-gray-500 max-w-md mx-auto my-12">
+            <Activity className="w-10 h-10 mx-auto mb-3 opacity-30 text-indigo-400" />
+            <h3 className="text-base font-semibold text-gray-300">No Active Run Selected</h3>
+            <p className="text-xs text-gray-500 mt-1 mb-4">
+              Select a previous run from History to inspect its artifacts, or start a new run from Launch.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={() => setActiveView('launch')}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+              >
+                Launch New Run
+              </button>
+              <button
+                onClick={() => setActiveView('history')}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
+              >
+                View History
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeView === 'history' && (
+          <HistoryView
+            onViewRun={async (selectedRun) => {
+              try {
+                const fullRun = await fetchRun(selectedRun.run_id);
+                setRunState(fullRun);
+              } catch {
+                setRunState(selectedRun);
+              }
+              setActiveView('run');
+              setActiveTab('artifacts');
+            }}
+            onRerun={() => {
+              setActiveView('launch');
+            }}
+          />
+        )}
+
+        {activeView === 'metrics' && (
+          <MetricsDashboard />
+        )}
+
+        {activeView === 'compare' && (
+          <CompareView />
         )}
       </main>
 

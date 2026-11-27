@@ -17,6 +17,8 @@ export type StageName =
 
 export type StageStatus = 'idle' | 'running' | 'done' | 'failed' | 'waiting_approval';
 
+export type ActiveView = 'launch' | 'run' | 'history' | 'metrics' | 'compare';
+
 export interface StageInfo {
   name: StageName;
   label: string;
@@ -237,4 +239,53 @@ export interface ReviewReportData {
   security_checks?: Record<string, boolean>;
   code_quality_score?: number;
   issues?: Array<{ title?: string; description?: string; severity?: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Metrics / History
+// ---------------------------------------------------------------------------
+
+export interface RunSummary {
+  run_id: string;
+  idea: string;
+  status: string;
+  current_stage: string;
+  created_at: number;
+  updated_at: number;
+  duration_seconds?: number;
+  total_tokens?: number;
+  tokens?: number;
+  cost_usd?: number;
+  debug_iterations?: number;
+  tests_passed?: number;
+  total_tests?: number;
+  error?: string;
+}
+
+export interface MetricsAggregates {
+  avg_tokens: number;
+  avg_duration_seconds: number;
+  total_cost_usd: number;
+  avg_cost_usd: number;
+  success_rate: number;
+  total_done: number;
+  total_failed: number;
+  total_cancelled: number;
+  avg_tests_passed?: number;
+  avg_debug_iterations?: number;
+}
+
+export interface MetricsResponse {
+  total_runs: number;
+  runs: RunSummary[];
+  aggregates: MetricsAggregates;
+  selected_runs?: RunSummary[];
+  selected_aggregates?: MetricsAggregates | null;
+}
+
+export interface PerRunMetrics extends RunSummary {
+  stage_durations: Record<string, number>;
+  stage_tokens: Record<string, number>;
+  history?: Array<{ from: string; to: string; timestamp: number; details?: Record<string, unknown> }>;
+  artifacts?: Record<string, string>;
 }

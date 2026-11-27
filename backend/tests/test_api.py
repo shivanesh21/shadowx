@@ -188,6 +188,15 @@ class TestMetricsCompare:
         assert resp.status_code == 200
         assert resp.json()["total_runs"] >= 1
 
+    def test_compare_with_run_ids(self, client):
+        rid = _start_fake_run(client)
+        resp = client.get(f"/metrics/compare?run_ids={rid}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["selected_runs"]) == 1
+        assert data["selected_runs"][0]["run_id"] == rid
+        assert data["selected_aggregates"] is not None
+
 
 class TestSSEStream:
     def test_sse_unknown_run_returns_error_event(self, client):
@@ -252,3 +261,38 @@ class TestRollbackRun:
     def test_rollback_invalid_stage_returns_400(self, client):
         resp = client.post("/runs/some-id/rollback", json={"stage": "INVALID_STAGE"})
         assert resp.status_code == 400
+
+
+class TestPerRunMetrics:
+    def test_per_run_metrics_404_for_unknown(self, client):
+        resp = client.get("/runs/unknown-run-id/metrics")
+        assert resp.status_code == 404
+
+    def test_per_run_metrics_returns_details(self, client):
+        rid = _start_fake_run(client)
+        resp = client.get(f"/runs/{rid}/metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["run_id"] == rid
+        assert "stage_durations" in data
+        assert "stage_tokens" in data
+
+
+class TestZipExport:
+    def test_zip_unknown_run_returns_404(self, client):
+        resp = client.get("/runs/unknown-run-id/zip")
+        assert resp.status_code == 404
+
+    def test_zip_export_success(self, client, tmp_path, monkeypatch):
+        import api.main as main_mod
+        rid = "zip-test-run"
+        ws = tmp_path / "runs" / rid / "workspace"
+        ws.mkdir(parents=True)
+        (ws / "app.py").write_text("print('hello')")
+
+        monkeypatch.setattr(main_mod, "RUNS_DIR", tmp_path / "runs")
+        resp = client.get(f"/runs/{rid}/zip")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        assert len(resp.content) > 0
+

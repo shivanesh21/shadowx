@@ -71,6 +71,25 @@ export function getZipDownloadUrl(runId: string): string {
   return `${API_BASE}/runs/${runId}/zip`;
 }
 
+export async function fetchMetrics(): Promise<import('../types').MetricsResponse> {
+  const resp = await fetch(`${API_BASE}/metrics/compare`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchCompare(runIds: string[]): Promise<import('../types').MetricsResponse> {
+  const q = runIds.join(',');
+  const resp = await fetch(`${API_BASE}/metrics/compare?run_ids=${encodeURIComponent(q)}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchPerRunMetrics(runId: string): Promise<import('../types').PerRunMetrics> {
+  const resp = await fetch(`${API_BASE}/runs/${runId}/metrics`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 /**
  * Connect to the SSE endpoint for a given run and stream events back via callback.
  */

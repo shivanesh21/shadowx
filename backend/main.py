@@ -324,43 +324,112 @@ def download_zip(run_id: str) -> StreamingResponse:
 # ---------------------------------------------------------------------------
 
 @app.get("/metrics/compare")
-def compare_metrics() -> dict:
+def compare_metrics(run_ids: Optional[str] = None) -> dict:
     """
-    Compare all recorded runs: factory (multi-agent) vs single-agent.
-    Returns aggregated stats per mode grouped by status.
+    Aggregate run metrics. When ``run_ids`` (comma-separated) is supplied,
+    returns only those runs for a side-by-side comparison view.
+    Always returns the global aggregates over ALL runs for the dashboard.
     """
-    rows = list_runs()
+    all_rows = list_runs()
 
-    summary: dict[str, Any] = {
-        "total_runs": len(rows),
-        "runs": [],
-        "aggregates": {
-            "avg_tokens": 0,
-            "avg_duration_seconds": 0,
-            "success_rate": 0.0,
-        },
+    # Side-by-side selection (used by Compare screen)
+    selected: list[dict] = []
+    if run_ids:
+        ids = [i.strip() for i in run_ids.split(",") if i.strip()]
+        selected = [r for r in all_rows if r.get("run_id") in ids]
+
+    def _aggregates(rows: list[dict]) -> dict:
+        if not rows:
+            return {
+                "avg_tokens": 0,
+                "avg_duration_seconds": 0.0,
+                "total_cost_usd": 0.0,
+                "avg_cost_usd": 0.0,
+                "success_rate": 0.0,
+                "total_done": 0,
+                "total_failed": 0,
+                "total_cancelled": 0,
+                "avg_tests_passed": 0,
+                "avg_debug_iterations": 0,
+            }
+        n = len(rows)
+        done = sum(1 for r in rows if r.get("status") == "done")
+        return {
+            "avg_tokens": sum(r.get("total_tokens", 0) for r in rows) // n,
+            "avg_duration_seconds": round(sum(r.get("duration_seconds", 0.0) for r in rows) / n, 1),
+            "total_cost_usd": round(sum(r.get("cost_usd", 0.0) or 0.0 for r in rows), 4),
+            "avg_cost_usd": round(sum(r.get("cost_usd", 0.0) or 0.0 for r in rows) / n, 4),
+            "success_rate": round(done / n, 2),
+            "total_done": done,
+            "total_failed": sum(1 for r in rows if r.get("status") == "failed"),
+            "total_cancelled": sum(1 for r in rows if r.get("status") == "cancelled"),
+            "avg_tests_passed": sum(r.get("tests_passed", 0) for r in rows) // n,
+            "avg_debug_iterations": round(sum(r.get("debug_iterations", 0) for r in rows) / n, 1),
+        }
+
+    return {
+        "total_runs": len(all_rows),
+        "runs": all_rows,
+        "aggregates": _aggregates(all_rows),
+        # Non-empty only when run_ids filter is active
+        "selected_runs": selected,
+        "selected_aggregates": _aggregates(selected) if selected else None,
     }
 
-    if not rows:
-        return summary
 
-    total_tokens = sum(r.get("total_tokens", 0) for r in rows)
-    total_duration = sum(r.get("duration_seconds", 0.0) for r in rows)
-    total_cost = sum(r.get("cost_usd", 0.0) or 0.0 for r in rows)
-    done_count = sum(1 for r in rows if r.get("status") == "done")
+@app.get("/runs/{run_id}/metrics")
+def per_run_metrics(run_id: str) -> dict:
+    """
+    Detailed per-run metrics card — combines SQLite summary with per-stage
+    timing extracted from state.json history.
+    """
+    db_row = get_run(run_id)
+    state = get_run_state(run_id)
 
-    summary["runs"] = rows
-    summary["aggregates"] = {
-        "avg_tokens": total_tokens // len(rows) if rows else 0,
-        "avg_duration_seconds": round(total_duration / len(rows), 1) if rows else 0,
-        "total_cost_usd": round(total_cost, 4),
-        "avg_cost_usd": round(total_cost / len(rows), 4) if rows else 0.0,
-        "success_rate": round(done_count / len(rows), 2) if rows else 0.0,
-        "total_done": done_count,
-        "total_failed": sum(1 for r in rows if r.get("status") == "failed"),
-        "total_cancelled": sum(1 for r in rows if r.get("status") == "cancelled"),
+    if db_row is None and state is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    merged: dict[str, Any] = {}
+    if db_row:
+        merged.update(db_row)
+    if state:
+        merged.update(state)
+
+    # Build per-stage timing from state history transitions
+    stage_durations: dict[str, float] = {}
+    history = merged.get("history", [])
+    if history:
+        for i, entry in enumerate(history):
+            stage = entry.get("to", "")
+            ts = entry.get("timestamp", 0)
+            if i + 1 < len(history):
+                next_ts = history[i + 1].get("timestamp", ts)
+                stage_durations[stage] = round(next_ts - ts, 1)
+
+    # Token / cost breakdown from events.jsonl if available
+    events_file = RUNS_DIR / run_id / "events.jsonl"
+    stage_tokens: dict[str, int] = {}
+    if events_file.exists():
+        try:
+            current_stage = "ANALYSIS"
+            for line in events_file.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                ev = json.loads(line)
+                et = ev.get("event_type", "")
+                if et == "stage_started":
+                    current_stage = ev.get("stage", current_stage)
+                elif et == "llm_call":
+                    toks = ev.get("total_tokens", 0) or 0
+                    stage_tokens[current_stage] = stage_tokens.get(current_stage, 0) + toks
+        except Exception:
+            pass
+
+    return {
+        **merged,
+        "stage_durations": stage_durations,
+        "stage_tokens": stage_tokens,
     }
-    return summary
 
 
 # ---------------------------------------------------------------------------
