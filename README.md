@@ -118,30 +118,29 @@ All 27 tests validate:
 
 ```
 shadowx/
-├── shadow/
-│   ├── core/
-│   │   ├── agent.py        # Spec-driven ReAct Agent loop
-│   │   ├── events.py       # Typed event dataclasses
-│   │   ├── event_bus.py    # Event bus & JSONL logger
-│   │   └── llm.py          # Gemini & Fake LLM providers
-│   ├── tools/
-│   │   ├── sandbox.py      # Workspace path resolution & env scrubber
-│   │   ├── filesystem.py   # read, write, edit, list, glob, grep
-│   │   ├── shell.py        # Sandboxed run_command
-│   │   ├── testing.py      # Structured run_tests
-│   │   └── registry.py     # Role permissions & ToolRegistry
-│   ├── agent.py            # Backward-compatible agent facade
-│   ├── cli.py              # Event-driven terminal UI
-│   └── tools.py            # Backward-compatibility tools bridge
-├── docs/
-│   ├── project1_report.md  # Detailed Milestone 1 Technical Report
-│   ├── project1_demo_script.md # Walkthrough & video demo script
-│   └── build-plan.md       # 20-day ShadowX Factory build plan
-└── tests/
-    ├── test_agent_core.py  # Agent engine & finish tool tests
-    ├── test_events.py      # Event bus & JSONL persistence tests
-    ├── test_llm_provider.py # LLM provider & retry tests
-    └── test_tools.py       # Sandboxing, tools, & RBAC tests
+├── backend/            # Dedicated FastAPI backend service
+│   ├── main.py         # REST & SSE API endpoints
+│   ├── database.py     # SQLite persistence layer
+│   ├── run_manager.py  # Background run executor & lifecycle
+│   └── sse.py          # Server-Sent Events stream generator
+├── frontend/           # Dedicated React + Vite + TypeScript web application
+│   ├── src/            # Visual pipeline DAG, Monaco editor, timeline, artifacts
+│   ├── package.json    # Frontend dependencies and build scripts
+│   └── vite.config.ts  # Configured to build into static/
+├── static/             # Bundled SPA assets served by FastAPI
+├── api/                # Backward-compatibility shims forwarding to backend/
+├── shadow/             # Core agent framework & CLI
+│   ├── core/           # ReAct Agent loop, EventBus, events, LLM providers
+│   ├── tools/          # Sandboxing, filesystem, shell, testing, registry
+│   ├── cli.py          # Rich terminal REPL and one-shot runner
+│   └── agent.py        # Single-agent baseline runner
+├── pipeline/           # Multi-agent orchestrator & state machine
+│   ├── orchestrator.py # State machine, loop guard, stage execution
+│   ├── git_checkpoints.py # Workspace git snapshots & stage rollback
+│   └── schemas.py      # Pydantic schemas for requirements, design, reviews
+├── evals/              # Benchmark evaluation tasks and comparison runner
+├── docs/               # System architecture, ADRs, security specifications
+└── tests/              # 97 unit, integration, and security tests
 ```
 
 ---
