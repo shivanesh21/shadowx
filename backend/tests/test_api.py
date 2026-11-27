@@ -28,9 +28,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 # Redirect RUNS_DIR and DB_PATH to a temporary directory for isolation.
-import api.run_manager as rm_mod
-import api.sse as sse_mod
-import api.database as db_mod
+import backend.run_manager as rm_mod
+import backend.sse as sse_mod
+import backend.database as db_mod
 
 # We'll patch these paths before importing the app.
 _tmp_dir: Path = None
@@ -47,7 +47,7 @@ def isolated_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(sse_mod, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(db_mod, "DB_PATH", tmp_path / "test.db")
     # Also patch the import inside main.py
-    import api.main as main_mod
+    import backend.main as main_mod
     monkeypatch.setattr(main_mod, "RUNS_DIR", tmp_path / "runs")
     db_mod.init_db()
     # Clear module-level active_run_id so tests are independent.
@@ -60,7 +60,7 @@ def isolated_dirs(tmp_path, monkeypatch):
 @pytest.fixture()
 def client():
     """Return a synchronous HTTPX test client for the FastAPI app."""
-    from api.main import app
+    from backend.main import app
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
 
@@ -167,7 +167,7 @@ class TestListFiles:
         ws = tmp_path / "runs" / "run_abc" / "workspace"
         ws.mkdir(parents=True)
         (ws / "hello.txt").write_text("hi")
-        import api.main as main_mod
+        import backend.main as main_mod
         monkeypatch.setattr(main_mod, "RUNS_DIR", tmp_path / "runs")
         resp = client.get("/runs/run_abc/files")
         assert resp.status_code == 200
@@ -216,7 +216,7 @@ class TestSSEStream:
         Write a fake events.jsonl with a run_started event and confirm the
         SSE stream replays it back without needing a real pipeline.
         """
-        import api.main as main_mod
+        import backend.main as main_mod
         run_id = "sse-test-run"
         run_dir = tmp_path / "runs" / run_id
         run_dir.mkdir(parents=True)
@@ -284,7 +284,7 @@ class TestZipExport:
         assert resp.status_code == 404
 
     def test_zip_export_success(self, client, tmp_path, monkeypatch):
-        import api.main as main_mod
+        import backend.main as main_mod
         rid = "zip-test-run"
         ws = tmp_path / "runs" / rid / "workspace"
         ws.mkdir(parents=True)
