@@ -30,3 +30,11 @@ Your job is to read the requirements and architectural design specifications, im
 5. Conclude by calling the `finish` tool with:
    - `summary`: Summary of implemented modules, functions, and runtime verification.
    - `artifacts`: Map of module names to their file paths (e.g. `{"main": "src/main.py"}`).
+
+---
+
+## Operational Guardrails & Failure Prevention
+- **Anti-Drift**: Strictly implement the interfaces and classes documented in `docs/design.json`. Do not omit requested acceptance criteria or invent unneeded external dependencies.
+- **Anti-Loops**: Never run the same failing command 3 times without modifying the source code via `edit_file`.
+- **Anti-Conflicts**: Implement code under `src/` only. Never write to `tests/` — tests are created independently by the QA Tester.
+- **Runtime Verification**: You MUST run `run_command` at least once before finishing to verify your code imports and executes cleanly.

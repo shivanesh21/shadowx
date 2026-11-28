@@ -289,3 +289,50 @@ export interface PerRunMetrics extends RunSummary {
   history?: Array<{ from: string; to: string; timestamp: number; details?: Record<string, unknown> }>;
   artifacts?: Record<string, string>;
 }
+
+// ---------------------------------------------------------------------------
+// Benchmark & Demo / Replay
+// ---------------------------------------------------------------------------
+
+export interface EvalTaskResult {
+  task_id: string;
+  task_name: string;
+  factory_passed: boolean;
+  single_passed: boolean;
+  factory_tokens: number;
+  single_tokens: number;
+  factory_cost_usd: number;
+  single_cost_usd: number;
+  factory_duration: number;
+  single_duration: number;
+  debug_iterations: number;
+  factory_tests_passed: number;
+  factory_tests_total: number;
+  single_tests_passed: number;
+  single_tests_total: number;
+  factory_error: string | null;
+  single_error: string | null;
+}
+
+export interface EvalBenchmarkData {
+  tasks_tested: number;
+  factory_success_rate: number;
+  single_agent_success_rate: number;
+  factory_avg_tokens: number;
+  single_agent_avg_tokens: number;
+  results: EvalTaskResult[];
+  comparison_markdown?: string;
+}
+
+export interface DemoRun {
+  run_id: string;
+  name: string;
+  idea: string;
+  status: string;
+  tokens: number;
+  duration_seconds: number;
+  tests_passed: number;
+  total_tests: number;
+  created_at: number;
+}
+

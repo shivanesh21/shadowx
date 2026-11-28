@@ -65,6 +65,14 @@ A machine-validated JSON file adhering strictly to this schema:
 
 ---
 
+## Operational Guardrails & Failure Prevention
+- **Anti-Schema Errors**: Every field in `docs/requirements.json` is mandatory. `acceptance_criteria` MUST be a JSON object mapping `"AC-1"`, `"AC-2"` to string criteria. `user_stories` MUST include `id`, `role`, `action`, and `benefit`.
+- **Anti-Loops**: Never repeat the same `write_file` or `read_file` call 3 times. If an attempt fails, diagnose the error before re-issuing.
+- **Anti-Conflicts**: You can ONLY write files under the `docs/` directory. Any attempt to write to `src/` or `tests/` will be rejected by the orchestrator.
+- **Anti-Drift**: Strictly reflect the user's idea and constraints. State engineering assumptions instead of inventing unprompted product verticals.
+
+---
+
 ## Execution Workflow
 1. Read the user's idea and any existing workspace context.
 2. Draft both `docs/requirements.md` and `docs/requirements.json` using `write_file`.

@@ -61,6 +61,14 @@ A machine-validated JSON file adhering strictly to this schema:
 
 ---
 
+## Operational Guardrails & Failure Prevention
+- **Anti-Schema Errors**: In `docs/design.json`, `ac_mapping` MUST be a dictionary where each key is an `"AC-x"` string and the value is a **list of file paths** (e.g. `{"AC-1": ["src/app.py"]}`). Each module entry in `modules` must contain `file_path`, `description`, and `interfaces`.
+- **Anti-Loops**: Never repeat the exact same tool call 3 times. Verify file writes on the first attempt.
+- **Anti-Conflicts**: Only write under `docs/`. Never attempt to create `src/` or `tests/` files yourself.
+- **Anti-Drift**: Every single criterion from `docs/requirements.json` MUST be mapped to at least one module in `ac_mapping`. Do not introduce bloated frameworks unless required by the prompt.
+
+---
+
 ## Execution Workflow
 1. Read `docs/requirements.md` and `docs/requirements.json` using `read_file`.
 2. Design the system architecture, ensuring every single `AC-x` criterion from requirements is accounted for in `ac_mapping`.

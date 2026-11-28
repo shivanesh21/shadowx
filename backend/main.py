@@ -433,6 +433,71 @@ def per_run_metrics(run_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Benchmark & Demo / Replay endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/metrics/evals")
+def get_eval_benchmark() -> dict:
+    """Return eval_results.json benchmark data and comparison_table.md content."""
+    base_dir = Path(__file__).parent
+    eval_json = base_dir / "evals" / "eval_results.json"
+    eval_md = base_dir / "evals" / "comparison_table.md"
+    if not eval_json.exists():
+        raise HTTPException(status_code=404, detail="Eval benchmark results not found")
+    data = json.loads(eval_json.read_text(encoding="utf-8"))
+    data["comparison_markdown"] = eval_md.read_text(encoding="utf-8") if eval_md.exists() else ""
+    return data
+
+
+@app.get("/runs/demo/list")
+def list_demo_runs() -> list[dict]:
+    """Return packaged demo runs available for instant replay and inspection."""
+    demos = []
+    demo_dir = RUNS_DIR / "demo_bank_account_lib"
+    if demo_dir.exists() and (demo_dir / "state.json").exists():
+        try:
+            state = json.loads((demo_dir / "state.json").read_text(encoding="utf-8"))
+            demos.append({
+                "run_id": "demo_bank_account_lib",
+                "name": "Bank Account Library (Full 6-Stage Demo)",
+                "idea": state.get("idea", "Bank Account Library"),
+                "status": state.get("status", "done"),
+                "tokens": state.get("tokens", 48000),
+                "duration_seconds": 30.0,
+                "tests_passed": 5,
+                "total_tests": 5,
+                "created_at": state.get("created_at", time.time()),
+            })
+        except Exception:
+            pass
+    return demos
+
+
+@app.get("/runs/{run_id}/raw-events")
+def get_raw_events(run_id: str) -> list[dict]:
+    """Return raw parsed events from events.jsonl for replay mode."""
+    events_file = RUNS_DIR / run_id / "events.jsonl"
+    if not events_file.exists():
+        events_file = RUNS_DIR / "evals" / run_id / "events.jsonl"
+    if not events_file.exists():
+        # Fallback to backend root runs if different
+        alt_file = Path(__file__).parent / "runs" / run_id / "events.jsonl"
+        if alt_file.exists():
+            events_file = alt_file
+    if not events_file.exists():
+        raise HTTPException(status_code=404, detail=f"Events for run '{run_id}' not found")
+
+    events = []
+    for line in events_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.strip():
+            try:
+                events.append(json.loads(line))
+            except Exception:
+                pass
+    return events
+
+
+# ---------------------------------------------------------------------------
 # Static frontend mount
 # ---------------------------------------------------------------------------
 

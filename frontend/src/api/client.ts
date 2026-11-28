@@ -90,6 +90,24 @@ export async function fetchPerRunMetrics(runId: string): Promise<import('../type
   return resp.json();
 }
 
+export async function fetchEvalBenchmark(): Promise<import('../types').EvalBenchmarkData> {
+  const resp = await fetch(`${API_BASE}/metrics/evals`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchDemoRuns(): Promise<import('../types').DemoRun[]> {
+  const resp = await fetch(`${API_BASE}/runs/demo/list`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function fetchRawEvents(runId: string): Promise<FactoryEvent[]> {
+  const resp = await fetch(`${API_BASE}/runs/${runId}/raw-events`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 /**
  * Connect to the SSE endpoint for a given run and stream events back via callback.
  */

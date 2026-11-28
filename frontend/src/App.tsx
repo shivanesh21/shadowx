@@ -12,6 +12,7 @@ import { ApprovalModal } from './components/ApprovalModal';
 import { HistoryView } from './components/HistoryView';
 import { MetricsDashboard } from './components/MetricsDashboard';
 import { CompareView } from './components/CompareView';
+import { ReplayControls } from './components/ReplayControls';
 import {
   RunState,
   FactoryEvent,
@@ -31,6 +32,7 @@ import {
   fetchRun,
   subscribeToEvents,
   getZipDownloadUrl,
+  fetchRawEvents,
 } from './api/client';
 import {
   Octagon,
@@ -65,6 +67,166 @@ export const App: React.FC = () => {
 
   const timerRef = useRef<number | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Replay mode state
+  const [isReplaying, setIsReplaying] = useState<boolean>(false);
+  const [replayEvents, setReplayEvents] = useState<FactoryEvent[]>([]);
+  const [replayIndex, setReplayIndex] = useState<number>(0);
+  const [isReplayPlaying, setIsReplayPlaying] = useState<boolean>(false);
+  const [replaySpeed, setReplaySpeed] = useState<number>(1);
+  const fullReplayRunRef = useRef<RunState | null>(null);
+  const replayIntervalRef = useRef<number | null>(null);
+
+  const applyReplaySlice = (slice: FactoryEvent[], baseRun?: RunState) => {
+    const rRun = baseRun || fullReplayRunRef.current || {
+      run_id: 'replay',
+      idea: 'Replay Mode',
+      current_stage: 'ANALYSIS' as StageName,
+      status: 'running' as const,
+      tokens: 0,
+      cost_usd: 0,
+      created_at: Date.now() / 1000,
+      updated_at: Date.now() / 1000,
+    };
+
+    const st = { ...rRun };
+    let role = 'Analyst';
+    let dbg = 0;
+    const msgs: AgentMessageEvent[] = [];
+    const tls: Array<{ call: ToolCallEvent; result?: ToolResultEvent }> = [];
+    const diffs: FileChangedEvent[] = [];
+    const tests: TestResultDataEvent[] = [];
+    let appr: ApprovalRequestedEvent | null = null;
+
+    for (const ev of slice) {
+      if (ev.event_type === 'run_started') {
+        st.idea = (ev as any).idea || st.idea;
+      } else if (ev.event_type === 'stage_started') {
+        role = (ev as any).agent_name || role;
+        st.current_stage = (ev as any).stage;
+        st.status = 'running';
+        if ((ev as any).stage === 'DEBUGGING') {
+          dbg += 1;
+        }
+      } else if (ev.event_type === 'stage_finished') {
+        st.current_stage = (ev as any).stage;
+      } else if (ev.event_type === 'run_finished') {
+        st.status = ((ev as any).status || 'done').toLowerCase() as any;
+        if ((ev as any).total_tokens) st.tokens = (ev as any).total_tokens;
+        if ((ev as any).total_cost_usd !== undefined) st.cost_usd = (ev as any).total_cost_usd;
+      } else if (ev.event_type === 'agent_message') {
+        msgs.push(ev as AgentMessageEvent);
+      } else if (ev.event_type === 'tool_call') {
+        tls.push({ call: ev as ToolCallEvent });
+      } else if (ev.event_type === 'tool_result') {
+        if (tls.length > 0) {
+          tls[tls.length - 1].result = ev as ToolResultEvent;
+        }
+      } else if (ev.event_type === 'file_changed') {
+        diffs.push(ev as FileChangedEvent);
+      } else if (ev.event_type === 'test_result') {
+        tests.push(ev as TestResultDataEvent);
+      } else if (ev.event_type === 'llm_call') {
+        st.tokens += (ev as any).total_tokens || 0;
+        st.cost_usd = (st.cost_usd || 0) + ((ev as any).cost_usd || 0);
+      } else if (ev.event_type === 'approval_requested') {
+        appr = ev as ApprovalRequestedEvent;
+      } else if (ev.event_type === 'approval_resolved') {
+        appr = null;
+      }
+    }
+
+    setRunState(st);
+    setCurrentRole(role);
+    setDebugIteration(dbg);
+    setEvents(slice);
+    setAgentMessages(msgs);
+    setTools(tls);
+    setDiffEvents(diffs);
+    setTestEvents(tests);
+    setPendingApproval(appr);
+  };
+
+  // Replay playback timer loop
+  useEffect(() => {
+    if (isReplaying && isReplayPlaying) {
+      if (replayIndex >= replayEvents.length) {
+        setIsReplayPlaying(false);
+        return;
+      }
+      const delay = replaySpeed >= 999 ? 1 : Math.max(10, Math.round(150 / replaySpeed));
+      replayIntervalRef.current = window.setTimeout(() => {
+        const nextIdx = replaySpeed >= 999 ? replayEvents.length : replayIndex + 1;
+        setReplayIndex(nextIdx);
+        applyReplaySlice(replayEvents.slice(0, nextIdx));
+        if (nextIdx >= replayEvents.length) {
+          setIsReplayPlaying(false);
+        }
+      }, delay);
+    }
+    return () => {
+      if (replayIntervalRef.current) {
+        clearTimeout(replayIntervalRef.current);
+      }
+    };
+  }, [isReplaying, isReplayPlaying, replayIndex, replayEvents, replaySpeed]);
+
+  const handleStartReplay = async (targetRun: RunState, autoplay: boolean = true) => {
+    try {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+      fullReplayRunRef.current = targetRun;
+      const raw = await fetchRawEvents(targetRun.run_id);
+      setReplayEvents(raw);
+      setIsReplaying(true);
+      setActiveView('run');
+      setActiveTab('overview');
+
+      if (autoplay) {
+        setReplayIndex(0);
+        applyReplaySlice([], targetRun);
+        setIsReplayPlaying(true);
+      } else {
+        setReplayIndex(raw.length);
+        applyReplaySlice(raw, targetRun);
+        setIsReplayPlaying(false);
+      }
+    } catch (err: any) {
+      alert(`Could not load replay events: ${err.message}`);
+    }
+  };
+
+  const handleExitReplay = () => {
+    setIsReplaying(false);
+    setIsReplayPlaying(false);
+    setReplayEvents([]);
+    setReplayIndex(0);
+  };
+
+  const handleLoadDemo = async (demoId: string = 'demo_bank_account_lib', autoplay: boolean = false) => {
+    try {
+      let r: RunState;
+      try {
+        r = await fetchRun(demoId);
+      } catch {
+        r = {
+          run_id: demoId,
+          idea: 'Double-entry bank account ledger library with transactions and audit logs',
+          current_stage: 'DONE',
+          status: 'done',
+          tokens: 48000,
+          cost_usd: 0.018,
+          created_at: Date.now() / 1000,
+          updated_at: Date.now() / 1000,
+        };
+      }
+      await handleStartReplay(r, autoplay);
+    } catch (err: any) {
+      alert(`Could not load demo run: ${err.message}`);
+    }
+  };
 
   // Stopwatch timer when run is active
   useEffect(() => {
@@ -234,6 +396,7 @@ export const App: React.FC = () => {
         {activeView === 'launch' && (
           <LaunchScreen
             onStart={handleStartRun}
+            onLoadDemo={handleLoadDemo}
             isStarting={isStarting}
             error={startError}
           />
@@ -241,6 +404,34 @@ export const App: React.FC = () => {
 
         {activeView === 'run' && runState && (
           <div className="space-y-6">
+            {/* Replay Controls (Visible in Replay Mode) */}
+            {isReplaying && (
+              <ReplayControls
+                events={replayEvents}
+                currentIndex={replayIndex}
+                isPlaying={isReplayPlaying}
+                speed={replaySpeed}
+                onPlay={() => setIsReplayPlaying(true)}
+                onPause={() => setIsReplayPlaying(false)}
+                onStepForward={() => {
+                  const nextIdx = Math.min(replayEvents.length, replayIndex + 1);
+                  setReplayIndex(nextIdx);
+                  applyReplaySlice(replayEvents.slice(0, nextIdx));
+                }}
+                onSeek={(idx) => {
+                  setReplayIndex(idx);
+                  applyReplaySlice(replayEvents.slice(0, idx));
+                }}
+                onSpeedChange={(spd) => setReplaySpeed(spd)}
+                onReset={() => {
+                  setReplayIndex(0);
+                  applyReplaySlice([]);
+                  setIsReplayPlaying(false);
+                }}
+                onExitReplay={handleExitReplay}
+              />
+            )}
+
             {/* Run Overview Bar */}
             <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 flex items-center justify-between flex-wrap gap-4">
               <div>
@@ -416,8 +607,12 @@ export const App: React.FC = () => {
               } catch {
                 setRunState(selectedRun);
               }
+              setIsReplaying(false);
               setActiveView('run');
               setActiveTab('artifacts');
+            }}
+            onReplayRun={(selectedRun) => {
+              handleStartReplay(selectedRun, true);
             }}
             onRerun={() => {
               setActiveView('launch');

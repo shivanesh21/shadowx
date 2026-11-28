@@ -6,13 +6,15 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRuns } from '../api/client';
 import { RunState } from '../types';
-import { RefreshCw, Download, Eye, CheckCircle2, XCircle, Ban, Loader2, Clock, Zap, DollarSign } from 'lucide-react';
+import { RefreshCw, Download, Eye, CheckCircle2, XCircle, Ban, Loader2, Clock, Zap, DollarSign, Play } from 'lucide-react';
 
 interface HistoryViewProps {
   /** Called when the user clicks "View Run" for a finished run. */
   onViewRun: (run: RunState) => void;
   /** Called to trigger a new run from an idea in history. */
   onRerun?: (idea: string) => void;
+  /** Called to start interactive event replay of a run. */
+  onReplayRun?: (run: RunState) => void;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -46,7 +48,7 @@ function fmtDate(ts: number | undefined): string {
   });
 }
 
-export const HistoryView: React.FC<HistoryViewProps> = ({ onViewRun, onRerun }) => {
+export const HistoryView: React.FC<HistoryViewProps> = ({ onViewRun, onRerun, onReplayRun }) => {
   const [runs, setRuns]     = useState<RunState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);
@@ -182,6 +184,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onViewRun, onRerun }) 
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
+                      {onReplayRun && (
+                        <button
+                          onClick={() => onReplayRun(run)}
+                          className="p-1.5 rounded-md bg-purple-900/60 text-purple-300 hover:bg-purple-800 border border-purple-700/50 transition-colors"
+                          title="Interactive Replay"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <a
                         href={`/runs/${run.run_id}/zip`}
                         download

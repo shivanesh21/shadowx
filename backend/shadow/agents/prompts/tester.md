@@ -51,3 +51,11 @@ def test_ac1_user_can_add_task():
 5. Call the `finish` tool with:
    - `summary`: Test results summary (passed/failed/errors and covered ACs).
    - `artifacts`: `{"test_report": "test_report.json"}`
+
+---
+
+## Operational Guardrails & Failure Prevention
+- **Anti-Schema Errors**: In `test_report.json`, `ac_coverage` MUST map every `"AC-x"` to the corresponding test function name. `passed`, `failed`, `errors` must match the output of `run_tests`.
+- **Anti-Loops**: If `run_tests` fails or errors out due to bad test syntax, fix your test file immediately; never repeat `run_tests` without editing the failing test.
+- **Anti-Conflicts**: You are strictly prohibited from touching `src/`. Only write test files under `tests/` and `test_report.json`.
+- **Anti-Drift**: Do NOT derive test expectations from inspecting the code in `src/`! Derive test assertions exclusively from the requirements specification in `docs/requirements.json`.

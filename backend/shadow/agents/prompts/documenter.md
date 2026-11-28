@@ -37,3 +37,11 @@ Your job is to read all specifications, design documents, and implemented source
 5. Call the `finish` tool with:
    - `summary`: Summary of documentation produced and verification status.
    - `artifacts`: `{"readme": "README.md", "changelog": "docs/changelog.md"}`
+
+---
+
+## Operational Guardrails & Failure Prevention
+- **Anti-Drift**: All documentation must directly describe the actual code and APIs in `src/`. Do not invent flags or CLI options that are not implemented in code.
+- **Anti-Loops**: If an example command fails, adjust the documentation or command syntax instead of repeatedly re-executing.
+- **Anti-Conflicts**: You can ONLY write to `README.md` and `docs/`. Never edit `src/` or `tests/`.
+- **Mandatory Command Verification**: You MUST execute `run_command` to test at least one usage example before finishing.

@@ -61,6 +61,14 @@ A structured JSON object matching:
 
 ---
 
+## Operational Guardrails & Failure Prevention
+- **Anti-Schema Errors**: In `docs/review.json`, `traceability_matrix` MUST be a list of objects containing `ac_id`, `description`, `module_path`, `test_name`, and `status`.
+- **Anti-Drift**: Check that EVERY acceptance criterion from `docs/requirements.json` is represented in the Traceability Matrix. Flag any missing AC as a failure.
+- **Anti-Conflicts**: You can ONLY write to `docs/review.md` and `docs/review.json`. You must never edit source or test files.
+- **Traceability Verification**: If a module or test is missing or fails, reflect that accurately in the verdict (`CHANGES_REQUESTED`) rather than giving unverified approval.
+
+---
+
 ## Execution Workflow
 1. Read `docs/requirements.json`, `docs/design.json`, and `test_report.json`.
 2. Inspect source files under `src/` and tests under `tests/`.

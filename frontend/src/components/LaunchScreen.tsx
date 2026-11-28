@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Rocket, Sparkles, Shield, Cpu, RefreshCw, Terminal, Layers } from 'lucide-react';
+import { Rocket, Sparkles, Shield, Cpu, RefreshCw, Terminal, Layers, Film, Play } from 'lucide-react';
 import { StartRunParams } from '../types';
 
 interface LaunchScreenProps {
   onStart: (params: StartRunParams) => void;
+  onLoadDemo?: (runId: string, autoplay?: boolean) => void;
   isStarting: boolean;
   error: string | null;
 }
@@ -38,6 +39,7 @@ const PRESET_IDEAS = [
 
 export const LaunchScreen: React.FC<LaunchScreenProps> = ({
   onStart,
+  onLoadDemo,
   isStarting,
   error,
 }) => {
@@ -73,6 +75,48 @@ export const LaunchScreen: React.FC<LaunchScreenProps> = ({
           Analyst, Architect, Developer, Tester, Debugger, Reviewer, and Documenter collaborating autonomously in isolated workspaces.
         </p>
       </div>
+
+      {/* Instant Demo Banner */}
+      {onLoadDemo && (
+        <div className="mb-6 rounded-xl bg-gradient-to-r from-indigo-950/70 via-gray-900 to-gray-900 border border-indigo-800/50 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-indigo-900/50 border border-indigo-700/50 text-indigo-300">
+              <Film className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Packaged Demo Run Available
+                </span>
+                <span className="px-1.5 py-0.2 rounded bg-emerald-950 border border-emerald-700/60 text-[10px] text-emerald-400 font-bold">
+                  5/5 Tests Passing
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Bank Account Library: full 6-stage lifecycle, artifacts, code, tests, and event timeline.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={() => onLoadDemo('demo_bank_account_lib', false)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors"
+            >
+              Load Artifacts
+            </button>
+            <button
+              type="button"
+              onClick={() => onLoadDemo('demo_bank_account_lib', true)}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition-colors shadow-md shadow-indigo-600/20"
+            >
+              <Play className="w-3.5 h-3.5" />
+              <span>Interactive Replay</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main input card */}
       <div className="bg-gray-900/90 border border-gray-800 rounded-xl p-6 shadow-2xl backdrop-blur-sm mb-6">
