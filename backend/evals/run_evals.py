@@ -182,7 +182,7 @@ def grade_workspace(workspace_dir: Path, hidden_tests_code: str) -> dict[str, An
         }
 
 
-def _build_fake_code_for_task(task_id: str) -> dict[str, str]:
+def _build_fake_code_for_task(task_id: str, for_factory: bool = True) -> dict[str, str]:
     """Canned implementations for fake/dry-run eval execution."""
     files: dict[str, str] = {}
     if task_id == "bank_account_lib":
@@ -254,8 +254,148 @@ def _build_fake_code_for_task(task_id: str) -> dict[str, str]:
             "    def reset(self, client_id: str):\n"
             "        self.requests.pop(client_id, None)\n"
         )
+    elif task_id == "csv_summary_cleaner":
+        if for_factory:
+            files["src/csv_cleaner.py"] = (
+                "import csv\nfrom pathlib import Path\n\n"
+                "def clean_csv(raw_path: str, out_path: str) -> list[dict]:\n"
+                "    seen = set()\n"
+                "    cleaned = []\n"
+                "    with open(raw_path, 'r', encoding='utf-8') as f:\n"
+                "        reader = csv.DictReader(f)\n"
+                "        fieldnames = reader.fieldnames\n"
+                "        for row in reader:\n"
+                "            if any(v == '' for v in row.values()):\n"
+                "                continue\n"
+                "            key = tuple(row.items())\n"
+                "            if key in seen:\n"
+                "                continue\n"
+                "            seen.add(key)\n"
+                "            cleaned.append(row)\n"
+                "    with open(out_path, 'w', newline='', encoding='utf-8') as f:\n"
+                "        writer = csv.DictWriter(f, fieldnames=fieldnames)\n"
+                "        writer.writeheader()\n"
+                "        writer.writerows(cleaned)\n"
+                "    return cleaned\n\n"
+                "def summarize_csv(file_path: str) -> dict:\n"
+                "    with open(file_path, 'r', encoding='utf-8') as f:\n"
+                "        reader = csv.DictReader(f)\n"
+                "        rows = list(reader)\n"
+                "    summary = {}\n"
+                "    for field in reader.fieldnames:\n"
+                "        vals = []\n"
+                "        for r in rows:\n"
+                "            try:\n                vals.append(float(r[field]))\n"
+                "            except (ValueError, TypeError):\n                pass\n"
+                "        if vals:\n"
+                "            summary[field] = {'count': len(vals), 'mean': sum(vals) / len(vals)}\n"
+                "    return summary\n"
+            )
+        else:
+            files["src/csv_cleaner.py"] = "# Incomplete single-agent draft\ndef clean_csv(r, o): return []\n"
+    elif task_id == "expense_tracker_sqlite":
+        if for_factory:
+            files["src/expense_tracker.py"] = (
+                "import sqlite3\nimport time\n\n"
+                "class ExpenseTracker:\n"
+                "    def __init__(self, db_path: str = 'expenses.db'):\n"
+                "        self.db_path = db_path\n"
+                "        with sqlite3.connect(self.db_path) as conn:\n"
+                "            conn.execute('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY, amount REAL, category TEXT, description TEXT, created_at REAL)')\n"
+                "    def add_expense(self, amount: float, category: str, description: str = ''):\n"
+                "        with sqlite3.connect(self.db_path) as conn:\n"
+                "            conn.execute('INSERT INTO expenses (amount, category, description, created_at) VALUES (?, ?, ?, ?)', (amount, category, description, time.time()))\n"
+                "    def list_expenses(self) -> list:\n"
+                "        with sqlite3.connect(self.db_path) as conn:\n"
+                "            conn.row_factory = sqlite3.Row\n"
+                "            return [dict(r) for r in conn.execute('SELECT * FROM expenses').fetchall()]\n"
+                "    def get_total_spending(self) -> float:\n"
+                "        with sqlite3.connect(self.db_path) as conn:\n"
+                "            cur = conn.execute('SELECT SUM(amount) FROM expenses')\n"
+                "            val = cur.fetchone()[0]\n"
+                "            return float(val) if val is not None else 0.0\n"
+                "    def get_category_totals(self) -> dict:\n"
+                "        with sqlite3.connect(self.db_path) as conn:\n"
+                "            rows = conn.execute('SELECT category, SUM(amount) FROM expenses GROUP BY category').fetchall()\n"
+                "            return {r[0]: float(r[1]) for r in rows}\n"
+            )
+        else:
+            files["src/expense_tracker.py"] = "# Incomplete single-agent draft\nclass ExpenseTracker:\n    pass\n"
+    elif task_id == "markdown_to_html":
+        if for_factory:
+            files["src/markdown_converter.py"] = (
+                "import re\n\n"
+                "def md_to_html(md: str) -> str:\n"
+                "    html = md\n"
+                "    html = re.sub(r'^### (.*)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)\n"
+                "    html = re.sub(r'^## (.*)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)\n"
+                "    html = re.sub(r'^# (.*)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)\n"
+                "    html = re.sub(r'\\*\\*(.*?)\\*\\*', r'<strong>\1</strong>', html)\n"
+                "    html = re.sub(r'\\*(.*?)\\*', r'<em>\1</em>', html)\n"
+                "    html = re.sub(r'`(.*?)`', r'<code>\1</code>', html)\n"
+                "    html = re.sub(r'^- (.*)$', r'<li>\1</li>', html, flags=re.MULTILINE)\n"
+                "    return html\n"
+            )
+        else:
+            files["src/markdown_converter.py"] = "def md_to_html(t): return t\n"
+    elif task_id == "text_adventure_game":
+        if for_factory:
+            files["src/game.py"] = (
+                "class GameEngine:\n"
+                "    def __init__(self):\n"
+                "        self.rooms = {'Hall': {'desc': 'A grand hall', 'north': 'Garden', 'items': []}, 'Garden': {'desc': 'A lush garden', 'south': 'Hall', 'items': []}}\n"
+                "        self.current_room = 'Hall'\n"
+                "        self.inventory = []\n"
+                "    def look(self) -> str:\n"
+                "        return self.rooms[self.current_room]['desc']\n"
+                "    def get_current_room_name(self) -> str:\n"
+                "        return self.current_room\n"
+                "    def move(self, direction: str) -> str:\n"
+                "        room = self.rooms[self.current_room]\n"
+                "        if direction in room:\n"
+                "            self.current_room = room[direction]\n"
+                "            return f'Moved {direction} to {self.current_room}'\n"
+                "        return f'You cannot go {direction}'\n"
+                "    def add_item_to_current_room(self, item: str):\n"
+                "        self.rooms[self.current_room]['items'].append(item)\n"
+                "    def take(self, item: str) -> str:\n"
+                "        items = self.rooms[self.current_room]['items']\n"
+                "        if item in items:\n"
+                "            items.remove(item)\n"
+                "            self.inventory.append(item)\n"
+                "            return f'Took {item}'\n"
+                "        return f'{item} not found'\n"
+                "    def get_inventory(self) -> list:\n"
+                "        return list(self.inventory)\n"
+            )
+        else:
+            files["src/game.py"] = "class GameEngine:\n    pass\n"
+    elif task_id == "url_shortener_api":
+        if for_factory:
+            files["src/url_shortener.py"] = (
+                "import hashlib\n\n"
+                "class URLShortener:\n"
+                "    def __init__(self):\n"
+                "        self.storage = {}\n"
+                "        self.clicks = {}\n"
+                "    def shorten(self, url: str, custom_code: str = None) -> str:\n"
+                "        code = custom_code or hashlib.md5(url.encode()).hexdigest()[:6]\n"
+                "        self.storage[code] = url\n"
+                "        self.clicks[code] = 0\n"
+                "        return code\n"
+                "    def resolve(self, code: str) -> str:\n"
+                "        if code not in self.storage:\n"
+                "            raise KeyError(f'Code {code} not found')\n"
+                "        self.clicks[code] += 1\n"
+                "        return self.storage[code]\n"
+                "    def get_clicks(self, code: str) -> int:\n"
+                "        if code not in self.clicks:\n"
+                "            raise KeyError(f'Code {code} not found')\n"
+                "        return self.clicks[code]\n"
+            )
+        else:
+            files["src/url_shortener.py"] = "class URLShortener:\n    pass\n"
     else:
-        # Generic fallback
         files["src/main.py"] = "# Generic stub\n"
     return files
 
@@ -263,7 +403,7 @@ def _build_fake_code_for_task(task_id: str) -> dict[str, str]:
 def _build_fake_provider(task: Task, for_factory: bool = True) -> FakeLLMProvider:
     """Queue appropriate fake LLM responses to test the pipeline deterministically."""
     provider = FakeLLMProvider()
-    code_files = _build_fake_code_for_task(task.id)
+    code_files = _build_fake_code_for_task(task.id, for_factory=for_factory)
 
     if for_factory:
         # Analyst
