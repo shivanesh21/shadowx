@@ -1,0 +1,48 @@
+id: text_adventure_game
+name: Text Adventure Game Engine
+timeout_seconds: 120
+idea: "Create a text-based adventure game engine in src/game.py featuring rooms, directional movement (north, south, east, west), item pickup/inventory, looking around, and a winning condition."
+expected_artifacts:
+  - "src/game.py"
+hidden_tests: |
+  import sys
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_game_initialization_and_look():
+      try:
+          from game import GameEngine
+      except ImportError:
+          from src.game import GameEngine
+      engine = GameEngine()
+      desc = engine.look()
+      assert isinstance(desc, str) and len(desc) > 0
+
+  def test_movement_between_rooms():
+      try:
+          from game import GameEngine
+      except ImportError:
+          from src.game import GameEngine
+      engine = GameEngine()
+      initial_room = engine.get_current_room_name()
+      # Attempt a valid move
+      res = engine.move("north")
+      new_room = engine.get_current_room_name()
+      assert "north" in res.lower() or new_room != initial_room or "cannot" in res.lower()
+
+  def test_take_item_and_inventory():
+      try:
+          from game import GameEngine
+      except ImportError:
+          from src.game import GameEngine
+      engine = GameEngine()
+      engine.add_item_to_current_room("key")
+      take_res = engine.take("key")
+      inv = engine.get_inventory()
+      assert "key" in inv

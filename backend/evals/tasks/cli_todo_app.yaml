@@ -1,0 +1,66 @@
+id: cli_todo_app
+name: CLI Todo App
+timeout_seconds: 120
+idea: "Create a CLI todo application in src/todo.py that supports adding items, listing items, marking items complete, deleting items, and JSON persistence."
+expected_artifacts:
+  - "src/todo.py"
+hidden_tests: |
+  import sys
+  import json
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_add_and_list_todos(tmp_path):
+      try:
+          from todo import TodoManager
+      except ImportError:
+          from src.todo import TodoManager
+      db = tmp_path / "todos.json"
+      manager = TodoManager(storage_path=str(db))
+      t1 = manager.add("Buy milk")
+      todos = manager.list_todos()
+      assert len(todos) == 1
+      assert todos[0]["title"] == "Buy milk" or todos[0]["text"] == "Buy milk"
+
+  def test_complete_todo(tmp_path):
+      try:
+          from todo import TodoManager
+      except ImportError:
+          from src.todo import TodoManager
+      db = tmp_path / "todos.json"
+      manager = TodoManager(storage_path=str(db))
+      item = manager.add("Write tests")
+      item_id = item["id"] if isinstance(item, dict) else item
+      manager.complete(item_id)
+      todos = manager.list_todos()
+      target = [t for t in todos if t.get("id") == item_id][0]
+      assert target.get("completed") is True or target.get("done") is True
+
+  def test_delete_todo(tmp_path):
+      try:
+          from todo import TodoManager
+      except ImportError:
+          from src.todo import TodoManager
+      db = tmp_path / "todos.json"
+      manager = TodoManager(storage_path=str(db))
+      item = manager.add("Task to remove")
+      item_id = item["id"] if isinstance(item, dict) else item
+      manager.delete(item_id)
+      assert len(manager.list_todos()) == 0
+
+  def test_persistence_reload(tmp_path):
+      try:
+          from todo import TodoManager
+      except ImportError:
+          from src.todo import TodoManager
+      db = tmp_path / "todos.json"
+      m1 = TodoManager(storage_path=str(db))
+      m1.add("Persistent item")
+      m2 = TodoManager(storage_path=str(db))
+      assert len(m2.list_todos()) == 1

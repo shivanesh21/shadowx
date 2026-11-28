@@ -191,6 +191,8 @@ def run_task(
     skip_confirm: bool = True,
     workspace_root: str = ".",
     log_path: Optional[Path] = DEFAULT_LOG_PATH,
+    provider: Optional[LLMProvider] = None,
+    quiet: bool = False,
 ) -> list[dict]:
     """
     Run one task through the hardened Agent engine and ToolRegistry.
@@ -198,9 +200,11 @@ def run_task(
     All terminal rendering is driven exclusively by EventBus subscriptions.
     All events are persisted to log_path (events.jsonl).
     """
-    provider = build_provider()
+    if provider is None:
+        provider = build_provider()
     event_bus = EventBus(log_path=log_path)
-    attach_cli_renderer(event_bus)
+    if not quiet:
+        attach_cli_renderer(event_bus)
 
     registry = ToolRegistry(
         workspace_root=workspace_root,
@@ -231,3 +235,49 @@ def run_task(
 
     result = agent.execute(task=task, initial_history=history)
     return result.history
+
+
+def run_baseline_agent(
+    task: str,
+    workspace_root: str = ".",
+    provider: Optional[LLMProvider] = None,
+    max_steps: int = MAX_STEPS,
+    log_path: Optional[Path] = None,
+    run_id: str = "baseline",
+) -> AgentResult:
+    """
+    Execute single-agent ShadowX over a task in an isolated workspace for benchmarking.
+    Returns full AgentResult with tokens, cost, and tool history.
+    """
+    if provider is None:
+        provider = build_provider()
+    event_bus = EventBus(log_path=log_path)
+
+    registry = ToolRegistry(
+        workspace_root=workspace_root,
+        event_bus=event_bus,
+        run_id=run_id,
+    )
+
+    tools = registry.get_all_tools(agent_name="ShadowX")
+    declarations = registry.get_all_declarations()
+
+    spec = AgentSpec(
+        name="ShadowX-Baseline",
+        system_prompt=SYSTEM_PROMPT,
+        allowed_tools=list(tools.keys()),
+        max_steps=max_steps,
+        require_finish_tool=False,
+    )
+
+    event_bus.emit(RunStarted(run_id=run_id, idea=task))
+
+    agent = Agent(
+        spec=spec,
+        llm=provider,
+        tool_registry=tools,
+        tool_declarations=declarations,
+        event_bus=event_bus,
+    )
+
+    return agent.execute(task=task, initial_history=None)

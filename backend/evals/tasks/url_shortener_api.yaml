@@ -1,0 +1,58 @@
+id: url_shortener_api
+name: URL Shortener Engine
+timeout_seconds: 120
+idea: "Build a URL shortener module in src/url_shortener.py that generates short codes, redirects/resolves original URLs, supports custom vanity aliases, tracks click counts, and handles 404/KeyError for unknown codes."
+expected_artifacts:
+  - "src/url_shortener.py"
+hidden_tests: |
+  import sys
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_shorten_and_resolve():
+      try:
+          from url_shortener import URLShortener
+      except ImportError:
+          from src.url_shortener import URLShortener
+      shortener = URLShortener()
+      code = shortener.shorten("https://google.com")
+      assert isinstance(code, str) and len(code) > 0
+      resolved = shortener.resolve(code)
+      assert resolved == "https://google.com"
+
+  def test_custom_vanity_code():
+      try:
+          from url_shortener import URLShortener
+      except ImportError:
+          from src.url_shortener import URLShortener
+      shortener = URLShortener()
+      code = shortener.shorten("https://github.com", custom_code="gh")
+      assert code == "gh"
+      assert shortener.resolve("gh") == "https://github.com"
+
+  def test_click_tracking():
+      try:
+          from url_shortener import URLShortener
+      except ImportError:
+          from src.url_shortener import URLShortener
+      shortener = URLShortener()
+      code = shortener.shorten("https://example.com")
+      assert shortener.get_clicks(code) == 0
+      shortener.resolve(code)
+      shortener.resolve(code)
+      assert shortener.get_clicks(code) == 2
+
+  def test_unknown_code_raises():
+      try:
+          from url_shortener import URLShortener
+      except ImportError:
+          from src.url_shortener import URLShortener
+      shortener = URLShortener()
+      with pytest.raises((KeyError, ValueError, LookupError)):
+          shortener.resolve("non_existent_code_xyz")

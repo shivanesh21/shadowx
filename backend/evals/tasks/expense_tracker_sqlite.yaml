@@ -1,0 +1,46 @@
+id: expense_tracker_sqlite
+name: Expense Tracker with SQLite
+timeout_seconds: 120
+idea: "Create an expense tracker with SQLite in src/expense_tracker.py that tracks expenses with category, amount, description, and date, and provides queries for total spending and category breakdown."
+expected_artifacts:
+  - "src/expense_tracker.py"
+hidden_tests: |
+  import sys
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_add_and_list_expenses(tmp_path):
+      try:
+          from expense_tracker import ExpenseTracker
+      except ImportError:
+          from src.expense_tracker import ExpenseTracker
+      db_file = tmp_path / "expenses.db"
+      tracker = ExpenseTracker(db_path=str(db_file))
+      tracker.add_expense(amount=15.50, category="Food", description="Lunch")
+      tracker.add_expense(amount=45.00, category="Transport", description="Train ticket")
+      expenses = tracker.list_expenses()
+      assert len(expenses) == 2
+
+  def test_total_spending_and_category_breakdown(tmp_path):
+      try:
+          from expense_tracker import ExpenseTracker
+      except ImportError:
+          from src.expense_tracker import ExpenseTracker
+      db_file = tmp_path / "expenses.db"
+      tracker = ExpenseTracker(db_path=str(db_file))
+      tracker.add_expense(amount=10.0, category="Food", description="Snack")
+      tracker.add_expense(amount=20.0, category="Food", description="Dinner")
+      tracker.add_expense(amount=30.0, category="Utilities", description="Electricity")
+
+      total = tracker.get_total_spending()
+      assert total == pytest.approx(60.0)
+
+      by_cat = tracker.get_category_totals()
+      assert by_cat["Food"] == pytest.approx(30.0)
+      assert by_cat["Utilities"] == pytest.approx(30.0)

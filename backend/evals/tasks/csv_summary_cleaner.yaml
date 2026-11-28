@@ -1,0 +1,43 @@
+id: csv_summary_cleaner
+name: CSV Cleaner and Summary Script
+timeout_seconds: 120
+idea: "Build a CSV cleaning and summary script in src/csv_cleaner.py that parses raw CSV, cleans missing values, deduplicates rows, computes column summary statistics, and saves the cleaned dataset."
+expected_artifacts:
+  - "src/csv_cleaner.py"
+hidden_tests: |
+  import sys
+  import csv
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_clean_csv_removes_duplicates_and_empty(tmp_path):
+      try:
+          from csv_cleaner import clean_csv, summarize_csv
+      except ImportError:
+          from src.csv_cleaner import clean_csv, summarize_csv
+
+      raw_file = tmp_path / "raw.csv"
+      raw_file.write_text("name,age,score\nAlice,25,90\nBob,,80\nAlice,25,90\nCharlie,30,95\n", encoding="utf-8")
+      out_file = tmp_path / "cleaned.csv"
+
+      cleaned_rows = clean_csv(str(raw_file), str(out_file))
+      assert out_file.exists()
+      # Duplicates (second Alice) should be removed
+      assert len(cleaned_rows) >= 2
+
+  def test_summarize_numeric_columns(tmp_path):
+      try:
+          from csv_cleaner import summarize_csv
+      except ImportError:
+          from src.csv_cleaner import summarize_csv
+
+      data_file = tmp_path / "data.csv"
+      data_file.write_text("id,val\n1,10\n2,20\n3,30\n", encoding="utf-8")
+      summary = summarize_csv(str(data_file))
+      assert "val" in summary or "mean" in str(summary) or "count" in str(summary)

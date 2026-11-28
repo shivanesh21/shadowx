@@ -1,0 +1,58 @@
+id: rate_limiter
+name: In-Memory Rate Limiter
+timeout_seconds: 120
+idea: "Build an in-memory RateLimiter in src/rate_limiter.py using token bucket or sliding window algorithm that enforces requests-per-minute limits per client ID and supports manual window resets."
+expected_artifacts:
+  - "src/rate_limiter.py"
+hidden_tests: |
+  import sys
+  import time
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_allow_within_limit():
+      try:
+          from rate_limiter import RateLimiter
+      except ImportError:
+          from src.rate_limiter import RateLimiter
+      limiter = RateLimiter(max_requests=3, window_seconds=60)
+      assert limiter.is_allowed("client_a") is True
+      assert limiter.is_allowed("client_a") is True
+      assert limiter.is_allowed("client_a") is True
+
+  def test_block_when_limit_exceeded():
+      try:
+          from rate_limiter import RateLimiter
+      except ImportError:
+          from src.rate_limiter import RateLimiter
+      limiter = RateLimiter(max_requests=2, window_seconds=60)
+      assert limiter.is_allowed("client_b") is True
+      assert limiter.is_allowed("client_b") is True
+      assert limiter.is_allowed("client_b") is False
+
+  def test_isolated_clients():
+      try:
+          from rate_limiter import RateLimiter
+      except ImportError:
+          from src.rate_limiter import RateLimiter
+      limiter = RateLimiter(max_requests=1, window_seconds=60)
+      assert limiter.is_allowed("client_1") is True
+      assert limiter.is_allowed("client_1") is False
+      assert limiter.is_allowed("client_2") is True
+
+  def test_reset_client():
+      try:
+          from rate_limiter import RateLimiter
+      except ImportError:
+          from src.rate_limiter import RateLimiter
+      limiter = RateLimiter(max_requests=1, window_seconds=60)
+      limiter.is_allowed("client_3")
+      assert limiter.is_allowed("client_3") is False
+      limiter.reset("client_3")
+      assert limiter.is_allowed("client_3") is True

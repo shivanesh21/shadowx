@@ -1,0 +1,63 @@
+id: bank_account_lib
+name: Bank Account Library
+timeout_seconds: 120
+idea: "Build a robust BankAccount library with deposit, withdraw, balance inquiry, transaction history, and custom InsufficientFundsError exception in src/bank_account.py."
+expected_artifacts:
+  - "src/bank_account.py"
+hidden_tests: |
+  import sys
+  from pathlib import Path
+  import pytest
+
+  # Ensure workspace src is on PYTHONPATH
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_import_and_initial_balance():
+      try:
+          from bank_account import BankAccount
+      except ImportError:
+          from src.bank_account import BankAccount
+      account = BankAccount(account_holder="Alice", initial_balance=100.0)
+      assert account.get_balance() == 100.0
+
+  def test_deposit():
+      try:
+          from bank_account import BankAccount
+      except ImportError:
+          from src.bank_account import BankAccount
+      account = BankAccount("Bob", 50.0)
+      account.deposit(25.0)
+      assert account.get_balance() == 75.0
+
+  def test_withdraw_success():
+      try:
+          from bank_account import BankAccount
+      except ImportError:
+          from src.bank_account import BankAccount
+      account = BankAccount("Charlie", 100.0)
+      account.withdraw(40.0)
+      assert account.get_balance() == 60.0
+
+  def test_insufficient_funds_raises():
+      try:
+          from bank_account import BankAccount, InsufficientFundsError
+      except ImportError:
+          from src.bank_account import BankAccount, InsufficientFundsError
+      account = BankAccount("Dave", 20.0)
+      with pytest.raises(InsufficientFundsError):
+          account.withdraw(50.0)
+
+  def test_transaction_history():
+      try:
+          from bank_account import BankAccount
+      except ImportError:
+          from src.bank_account import BankAccount
+      account = BankAccount("Eve", 100.0)
+      account.deposit(50.0)
+      account.withdraw(30.0)
+      history = account.get_history()
+      assert len(history) >= 2

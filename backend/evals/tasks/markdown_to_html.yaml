@@ -1,0 +1,45 @@
+id: markdown_to_html
+name: Markdown to HTML Converter
+timeout_seconds: 120
+idea: "Implement a lightweight Markdown to HTML converter in src/markdown_converter.py that parses headings (# to ###), bold (**text**), italics (*text*), inline code (`code`), unordered lists (- item), and paragraphs."
+expected_artifacts:
+  - "src/markdown_converter.py"
+hidden_tests: |
+  import sys
+  from pathlib import Path
+  import pytest
+
+  workspace = Path(__file__).resolve().parent.parent
+  src_dir = workspace / "src"
+  for p in (str(src_dir), str(workspace)):
+      if p not in sys.path:
+          sys.path.insert(0, p)
+
+  def test_headings_conversion():
+      try:
+          from markdown_converter import md_to_html
+      except ImportError:
+          from src.markdown_converter import md_to_html
+      assert "<h1>Header 1</h1>" in md_to_html("# Header 1")
+      assert "<h2>Header 2</h2>" in md_to_html("## Header 2")
+      assert "<h3>Header 3</h3>" in md_to_html("### Header 3")
+
+  def test_inline_formatting():
+      try:
+          from markdown_converter import md_to_html
+      except ImportError:
+          from src.markdown_converter import md_to_html
+      out = md_to_html("This is **bold** and *italic* and `code`.")
+      assert "<strong>bold</strong>" in out or "<b>bold</b>" in out
+      assert "<em>italic</em>" in out or "<i>italic</i>" in out
+      assert "<code>code</code>" in out
+
+  def test_unordered_list():
+      try:
+          from markdown_converter import md_to_html
+      except ImportError:
+          from src.markdown_converter import md_to_html
+      md = "- Item 1\n- Item 2"
+      out = md_to_html(md)
+      assert "<li>Item 1</li>" in out
+      assert "<li>Item 2</li>" in out
